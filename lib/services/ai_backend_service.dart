@@ -1,0 +1,63 @@
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'ocr_service.dart';
+
+/// This talks to YOUR OWN backend server — never directly to an LLM
+/// provider's API from inside the app. Two reasons:
+///  1. Security: an API key bundled inside a Flutter app can be extracted
+///     from the APK/IPA in minutes. It must live server-side only.
+///  2. Safety: the backend is where you enforce the medical-safety system
+///     prompt (see backend/server.js in this project) so the model can't
+///     be prompted around it by anything embedded in a photo or message.
+///
+/// See the README for a minimal Node/Express backend you can deploy
+/// (Render, Railway, Fly.io, your own VPS, etc.) that proxies to Claude.
+class AiBackendService {
+  AiBackendService._internal();
+  static final AiBackendService instance = AiBackendService._internal();
+
+  // Replace with your deployed backend URL.
+  static const String _baseUrl = 'https://my-sathi-backend.onrender.com';
+
+  Future<List<ParsedMedicineSuggestion>> parsePrescriptionText(
+      String rawText) async {
+    final res = await http.post(
+      Uri.parse('$_baseUrl/api/parse-prescription'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'rawText': rawText}),
+    );
+
+    if (res.statusCode != 200) {
+      throw Exception('Failed to parse prescription: ${res.statusCode}');
+    }
+
+    final data = jsonDecode(res.body) as Map<String, dynamic>;
+    final list = (data['medicines'] as List?) ?? [];
+    return list
+        .map((e) => ParsedMedicineSuggestion.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Sends a chat message plus lightweight context (current medicine names
+  /// only — not full health history) to the backend chatbot endpoint.
+  Future<String> sendChatMessage({
+    required String message,
+    required List<String> currentMedicineNames,
+  }) async {
+    final res = await http.post(
+      Uri.parse('$_baseUrl/api/chat'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'message': message,
+        'currentMedicines': currentMedicineNames,
+      }),
+    );
+
+    if (res.statusCode != 200) {
+      throw Exception('Chat request failed: ${res.statusCode}');
+    }
+
+    final data = jsonDecode(res.body) as Map<String, dynamic>;
+    return data['reply'] as String;
+  }
+}
