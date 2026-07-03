@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 260">
+  <defs>
+    <linearGradient id="bgGradient2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#5B7CFA"/>
+      <stop offset="100%" stop-color="#7B61FF"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Icon badge -->
+  <rect x="0" y="10" width="240" height="240" rx="56" fill="url(#bgGradient2)"/>
+  <path d="M120,178
+           C120,178 58,132 58,92
+           C58,68 78,50 98,50
+           C112,50 122,58 120,70
+           C122,58 132,50 146,50
+           C166,50 186,68 186,92
+           C186,132 120,178 120,178 Z"
+        fill="#FFFFFF"/>
+  <path d="M75,116 L92,116 L102,90 L114,142 L124,108 L134,116 L172,116"
+        fill="none"
+        stroke="#6B6FF0"
+        stroke-width="8"
+        stroke-linecap="round"
+        stroke-linejoin="round"/>
+
+  <!-- Wordmark -->
+  <text x="272" y="150" font-family="'Poppins','Segoe UI',Arial,sans-serif"
+        font-size="96" font-weight="700" fill="#1F2333">Sathi</text>
+  <text x="274" y="196" font-family="'Poppins','Segoe UI',Arial,sans-serif"
+        font-size="30" font-weight="500" fill="#6B7280">Your health companion</text>
+</svg>

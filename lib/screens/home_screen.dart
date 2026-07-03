@@ -2,10 +2,15 @@ import 'package:flutter/material.dart';
 import '../models/medicine.dart';
 import '../models/appointment.dart';
 import '../services/database_service.dart';
+import '../services/auth_service.dart';
 import 'scan_prescription_screen.dart';
 import 'medicine_list_screen.dart';
 import 'appointments_screen.dart';
 import 'chatbot_screen.dart';
+import 'prescription_history_screen.dart';
+import 'health_screen.dart';
+import 'profile_screen.dart';
+import 'settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -16,6 +21,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   List<Medicine> _medicines = [];
   List<Appointment> _appointments = [];
+  String _userName = '';
   bool _loading = true;
 
   @override
@@ -27,9 +33,11 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _load() async {
     final meds = await DatabaseService.instance.getActiveMedicines();
     final appts = await DatabaseService.instance.getUpcomingAppointments();
+    final profile = await AuthService.instance.getCurrentProfile();
     setState(() {
       _medicines = meds;
       _appointments = appts;
+      _userName = profile?.name ?? '';
       _loading = false;
     });
   }
@@ -40,16 +48,35 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF6F8FB),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFFF6F8FB),
+        elevation: 0,
+        automaticallyImplyLeading: false,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.person_outline, color: Colors.black87),
+            tooltip: 'Profile',
+            onPressed: () => Navigator.push(
+                context, MaterialPageRoute(builder: (_) => const ProfileScreen())),
+          ),
+          IconButton(
+            icon: const Icon(Icons.settings_outlined, color: Colors.black87),
+            tooltip: 'Settings',
+            onPressed: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const SettingsScreen())),
+          ),
+        ],
+      ),
       body: SafeArea(
         child: _loading
             ? const Center(child: CircularProgressIndicator())
             : RefreshIndicator(
                 onRefresh: _load,
                 child: ListView(
-                  padding: const EdgeInsets.all(20),
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
                   children: [
-                    const Text('Good day 👋',
-                        style: TextStyle(
+                    Text(_userName.isNotEmpty ? 'Hi, $_userName 👋' : 'Good day 👋',
+                        style: const TextStyle(
                             fontSize: 26, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 4),
                     Text('Here is your health summary for today',
@@ -188,36 +215,68 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _quickActionsRow(BuildContext context) {
-    return Row(
+    return Column(
       children: [
-        Expanded(
-          child: _actionButton(
-            context,
-            icon: Icons.list_alt,
-            label: 'My medicines',
-            onTap: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const MedicineListScreen())),
-          ),
+        Row(
+          children: [
+            Expanded(
+              child: _actionButton(
+                context,
+                icon: Icons.list_alt,
+                label: 'My medicines',
+                onTap: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const MedicineListScreen())),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _actionButton(
+                context,
+                icon: Icons.calendar_month,
+                label: 'Appointments',
+                onTap: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const AppointmentsScreen())),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _actionButton(
+                context,
+                icon: Icons.chat_bubble_outline,
+                label: 'Ask assistant',
+                onTap: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const ChatbotScreen())),
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _actionButton(
-            context,
-            icon: Icons.calendar_month,
-            label: 'Appointments',
-            onTap: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const AppointmentsScreen())),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _actionButton(
-            context,
-            icon: Icons.chat_bubble_outline,
-            label: 'Ask assistant',
-            onTap: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const ChatbotScreen())),
-          ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _actionButton(
+                context,
+                icon: Icons.description_outlined,
+                label: 'Reports',
+                onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const PrescriptionHistoryScreen())),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _actionButton(
+                context,
+                icon: Icons.monitor_heart_outlined,
+                label: 'My health',
+                onTap: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const HealthScreen())),
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(child: SizedBox()), // keeps grid aligned, 3rd slot free
+          ],
         ),
       ],
     );

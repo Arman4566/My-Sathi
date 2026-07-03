@@ -9,7 +9,18 @@ class _ChatMessage {
 }
 
 class ChatbotScreen extends StatefulWidget {
-  const ChatbotScreen({super.key});
+  /// If opened from a specific report/prescription, these carry that
+  /// context so the assistant can discuss it — e.g. "Scanned report from
+  /// 3/7/2026" and the OCR text of that report.
+  final String? initialContextLabel;
+  final String? initialContextText;
+
+  const ChatbotScreen({
+    super.key,
+    this.initialContextLabel,
+    this.initialContextText,
+  });
+
   @override
   State<ChatbotScreen> createState() => _ChatbotScreenState();
 }
@@ -17,17 +28,28 @@ class ChatbotScreen extends StatefulWidget {
 class _ChatbotScreenState extends State<ChatbotScreen> {
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
-  final List<_ChatMessage> _messages = [
-    _ChatMessage(
-      "Hi! I'm your health assistant. I can help with general questions "
-      "about your reminders, or point you in the right direction if you're "
-      "not sure what to do. For anything specific to your medicine or "
-      "condition, I'll always suggest checking with your doctor or "
-      "pharmacist — that's for your safety.",
-      false,
-    ),
-  ];
+  late final List<_ChatMessage> _messages;
   bool _sending = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _messages = [
+      _ChatMessage(
+        widget.initialContextLabel != null
+            ? "Hi! I can see you'd like to discuss: ${widget.initialContextLabel}. "
+                "Ask me anything about it — I'll explain in plain language. "
+                "For anything specific to your treatment, I'll always suggest "
+                "checking with your doctor or pharmacist too."
+            : "Hi! I'm your health assistant. I can help with general questions "
+                "about your reminders, or point you in the right direction if you're "
+                "not sure what to do. For anything specific to your medicine or "
+                "condition, I'll always suggest checking with your doctor or "
+                "pharmacist — that's for your safety.",
+        false,
+      ),
+    ];
+  }
 
   Future<void> _send() async {
     final text = _controller.text.trim();
@@ -42,8 +64,11 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     try {
       final meds = await DatabaseService.instance.getActiveMedicines();
       final names = meds.map((m) => m.name).toList();
-      final reply = await AiBackendService.instance
-          .sendChatMessage(message: text, currentMedicineNames: names);
+      final reply = await AiBackendService.instance.sendChatMessage(
+        message: text,
+        currentMedicineNames: names,
+        reportContext: widget.initialContextText,
+      );
       setState(() => _messages.add(_ChatMessage(reply, false)));
     } catch (e) {
       setState(() => _messages.add(_ChatMessage(

@@ -17,7 +17,7 @@ class AiBackendService {
   static final AiBackendService instance = AiBackendService._internal();
 
   // Replace with your deployed backend URL.
-  static const String _baseUrl = 'https://my-sathi-backend.onrender.com';
+  static const String _baseUrl = 'https://YOUR-BACKEND-URL.example.com';
 
   Future<List<ParsedMedicineSuggestion>> parsePrescriptionText(
       String rawText) async {
@@ -40,9 +40,12 @@ class AiBackendService {
 
   /// Sends a chat message plus lightweight context (current medicine names
   /// only — not full health history) to the backend chatbot endpoint.
+  /// [reportContext] optionally carries the raw text of a specific scanned
+  /// report the user opened this chat from, so the assistant can discuss it.
   Future<String> sendChatMessage({
     required String message,
     required List<String> currentMedicineNames,
+    String? reportContext,
   }) async {
     final res = await http.post(
       Uri.parse('$_baseUrl/api/chat'),
@@ -50,6 +53,7 @@ class AiBackendService {
       body: jsonEncode({
         'message': message,
         'currentMedicines': currentMedicineNames,
+        'reportContext': reportContext,
       }),
     );
 

@@ -14,7 +14,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const anthropic = new Anthropic({ apiKey:AIzaSyD_jnH-rzy3Arqyl1_H0e9EYByXZKKywz8 });
 
 // ---------------------------------------------------------------------
 // 1) Prescription text -> structured medicine suggestions
@@ -76,15 +76,18 @@ Rules you always follow:
 
 app.post('/api/chat', async (req, res) => {
   try {
-    const { message, currentMedicines } = req.body;
-    const context = currentMedicines?.length
+    const { message, currentMedicines, reportContext } = req.body;
+    const medsContext = currentMedicines?.length
       ? `The patient is currently taking: ${currentMedicines.join(', ')}.`
+      : '';
+    const reportBlock = reportContext
+      ? `\nThe patient opened this chat from a specific scanned report. Its text:\n"""${reportContext}"""\nYou may refer to it if relevant to their question.`
       : '';
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 500,
-      system: CHAT_SYSTEM_PROMPT + '\n' + context,
+      system: CHAT_SYSTEM_PROMPT + '\n' + medsContext + reportBlock,
       messages: [{ role: 'user', content: message }],
     });
 

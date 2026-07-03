@@ -36,45 +36,82 @@ class NotificationService {
         ?.requestNotificationsPermission();
   }
 
-  /// Schedules one repeating daily notification per dose time in the medicine.
-  /// Each (medicine, time-of-day) pair gets a stable, deterministic ID so
-  /// re-scheduling or cancelling later is reliable.
+  /// Schedules reminders for a medicine according to its frequency:
+  /// - daily: one repeating notification per dose time, every day
+  /// - custom: one repeating notification per (dose time, selected weekday)
+  /// Each combination gets a stable, deterministic ID so cancelling or
+  /// re-scheduling later is reliable.
   Future<void> scheduleMedicineReminders(Medicine medicine) async {
     for (final time in medicine.times) {
       final parts = time.split(':');
       final hour = int.parse(parts[0]);
       final minute = int.parse(parts[1]);
 
-      final id = _idFor(medicine.id, time);
-      final scheduledDate = _nextInstanceOfTime(hour, minute);
-
-      await _plugin.zonedSchedule(
-        id,
-        'Time for your medicine 💊',
-        '${medicine.name} (${medicine.dosage}) — ${medicine.instructions}',
-        scheduledDate,
-        const NotificationDetails(
-          android: AndroidNotificationDetails(
-            'medicine_reminders',
-            'Medicine Reminders',
-            channelDescription: 'Reminders to take scheduled medicine',
-            importance: Importance.max,
-            priority: Priority.high,
-          ),
-          iOS: DarwinNotificationDetails(),
-        ),
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-        uiLocalNotificationDateInterpretation:
-            UILocalNotificationDateInterpretation.absoluteTime,
-        matchDateTimeComponents: DateTimeComponents.time, // repeats daily
-        payload: 'medicine:${medicine.id}',
-      );
+      if (medicine.frequency == MedicineFrequency.daily) {
+        await _scheduleOne(
+          id: _idFor(medicine.id, time),
+          title: 'Time for your medicine 💊',
+          body: '${medicine.name} (${medicine.dosage}) — ${medicine.instructions}',
+          scheduledDate: _nextInstanceOfTime(hour, minute),
+          matchComponents: DateTimeComponents.time,
+          payload: 'medicine:${medicine.id}',
+        );
+      } else {
+        for (final weekday in medicine.customDays) {
+          await _scheduleOne(
+            id: _idFor(medicine.id, '$time-$weekday'),
+            title: 'Time for your medicine 💊',
+            body:
+                '${medicine.name} (${medicine.dosage}) — ${medicine.instructions}',
+            scheduledDate: _nextInstanceOfWeekdayTime(weekday, hour, minute),
+            matchComponents: DateTimeComponents.dayOfWeekAndTime,
+            payload: 'medicine:${medicine.id}',
+          );
+        }
+      }
     }
   }
 
+  Future<void> _scheduleOne({
+    required int id,
+    required String title,
+    required String body,
+    required tz.TZDateTime scheduledDate,
+    required DateTimeComponents matchComponents,
+    required String payload,
+  }) async {
+    await _plugin.zonedSchedule(
+      id,
+      title,
+      body,
+      scheduledDate,
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'medicine_reminders',
+          'Medicine Reminders',
+          channelDescription: 'Reminders to take scheduled medicine',
+          importance: Importance.max,
+          priority: Priority.high,
+        ),
+        iOS: DarwinNotificationDetails(),
+      ),
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+      matchDateTimeComponents: matchComponents,
+      payload: payload,
+    );
+  }
+
+  /// Cancels reminders for both possible scheduling shapes (daily and
+  /// custom-weekday) since a medicine may have been edited to switch
+  /// frequency after being scheduled the other way.
   Future<void> cancelMedicineReminders(Medicine medicine) async {
     for (final time in medicine.times) {
       await _plugin.cancel(_idFor(medicine.id, time));
+      for (var weekday = 1; weekday <= 7; weekday++) {
+        await _plugin.cancel(_idFor(medicine.id, '$time-$weekday'));
+      }
     }
   }
 
@@ -120,6 +157,15 @@ class NotificationService {
     var scheduled =
         tz.TZDateTime(tz.local, now.year, now.month, now.day, hour, minute);
     if (scheduled.isBefore(now)) {
+      scheduled = scheduled.add(const Duration(days: 1));
+    }
+    return scheduled;
+  }
+
+  /// [weekday] uses DateTime's convention: Monday = 1 ... Sunday = 7.
+  tz.TZDateTime _nextInstanceOfWeekdayTime(int weekday, int hour, int minute) {
+    var scheduled = _nextInstanceOfTime(hour, minute);
+    while (scheduled.weekday != weekday) {
       scheduled = scheduled.add(const Duration(days: 1));
     }
     return scheduled;

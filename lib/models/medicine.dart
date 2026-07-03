@@ -1,3 +1,8 @@
+/// How often a medicine should be taken.
+/// - daily: every day at the given times
+/// - custom: only on selected weekdays (see [Medicine.customDays])
+enum MedicineFrequency { daily, custom }
+
 class Medicine {
   final String id;
   final String name;
@@ -5,9 +10,11 @@ class Medicine {
   final String instructions; // e.g. "After food"
   final List<String> times; // e.g. ["08:00", "20:00"]
   final DateTime startDate;
-  final DateTime? endDate;
+  final DateTime? endDate; // null = ongoing, no auto-expiry
   final String? prescriptionId; // links back to the scanned prescription
   final bool active;
+  final MedicineFrequency frequency;
+  final List<int> customDays; // DateTime.monday(1) .. DateTime.sunday(7)
 
   Medicine({
     required this.id,
@@ -19,7 +26,14 @@ class Medicine {
     this.endDate,
     this.prescriptionId,
     this.active = true,
+    this.frequency = MedicineFrequency.daily,
+    this.customDays = const [],
   });
+
+  /// True if today is past this medicine's end date — used to
+  /// automatically retire old medicines instead of reminding forever.
+  bool get isExpired =>
+      endDate != null && DateTime.now().isAfter(endDate!);
 
   Map<String, dynamic> toMap() {
     return {
@@ -32,6 +46,8 @@ class Medicine {
       'endDate': endDate?.toIso8601String(),
       'prescriptionId': prescriptionId,
       'active': active ? 1 : 0,
+      'frequency': frequency.name,
+      'customDays': customDays.join(','),
     };
   }
 
@@ -48,6 +64,42 @@ class Medicine {
       endDate: map['endDate'] != null ? DateTime.parse(map['endDate']) : null,
       prescriptionId: map['prescriptionId'],
       active: map['active'] == 1,
+      frequency: MedicineFrequency.values.firstWhere(
+        (f) => f.name == (map['frequency'] ?? 'daily'),
+        orElse: () => MedicineFrequency.daily,
+      ),
+      customDays: (map['customDays'] as String? ?? '').isEmpty
+          ? []
+          : (map['customDays'] as String)
+              .split(',')
+              .map((e) => int.parse(e))
+              .toList(),
+    );
+  }
+
+  Medicine copyWith({
+    String? name,
+    String? dosage,
+    String? instructions,
+    List<String>? times,
+    DateTime? startDate,
+    DateTime? endDate,
+    bool? active,
+    MedicineFrequency? frequency,
+    List<int>? customDays,
+  }) {
+    return Medicine(
+      id: id,
+      name: name ?? this.name,
+      dosage: dosage ?? this.dosage,
+      instructions: instructions ?? this.instructions,
+      times: times ?? this.times,
+      startDate: startDate ?? this.startDate,
+      endDate: endDate ?? this.endDate,
+      prescriptionId: prescriptionId,
+      active: active ?? this.active,
+      frequency: frequency ?? this.frequency,
+      customDays: customDays ?? this.customDays,
     );
   }
 }

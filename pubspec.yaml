@@ -34,11 +34,19 @@ dependencies:
   # Utilities
   intl: ^0.19.0
   uuid: ^4.4.0
+  crypto: ^3.0.5
+  shared_preferences: ^2.2.3
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.4
 
 flutter:
   uses-material-design: true
+
+flutter_launcher_icons:
+     android: true
+     ios: true
+     image_path: "assets/icon/app_icon.png"
