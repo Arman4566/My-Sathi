@@ -1,20 +1,22 @@
 // Minimal Express backend that proxies requests from the Flutter app
-// to Claude's API. Deploy this somewhere (Render/Railway/Fly.io/your own
+// to Gemini's API. Deploy this somewhere (Render/Railway/Fly.io/your own
 // server) and put its URL into ai_backend_service.dart.
 //
-// Run: npm init -y && npm install express cors @anthropic-ai/sdk dotenv
+// Run: npm init -y && npm install express cors @google/genai dotenv
 //      node server.js
 
 const express = require('express');
 const cors = require('cors');
-const Anthropic = require('@anthropic-ai/sdk');
+const { GoogleGenAI } = require('@google/genai');
 require('dotenv').config();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+// Initialize Google Gen AI with your API key from environment variables
+// (Do not hardcode your key here! Keep it securely in Render/your .env file)
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 // ---------------------------------------------------------------------
 // 1) Prescription text -> structured medicine suggestions
@@ -23,23 +25,44 @@ app.post('/api/parse-prescription', async (req, res) => {
   try {
     const { rawText } = req.body;
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 1000,
-      system: `You extract medicine details from raw OCR text of a doctor's
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.0-flash',
+      contents: `You extract medicine details from raw OCR text of a doctor's
 prescription. The OCR text may be messy, misspelled, or incomplete because
-handwriting recognition is imperfect. Return ONLY valid JSON, no prose, no
-markdown fences, in this exact shape:
-{"medicines":[{"name":"","dosage":"","instructions":"","suggestedTimes":["HH:MM"]}]}
-If you are not confident about a field, leave it as an empty string or empty
-array rather than guessing. Never invent a medicine that is not clearly
-referenced in the text.`,
-      messages: [{ role: 'user', content: rawText }],
+handwriting recognition is imperfect. Return ONLY valid JSON matching the exact schema structure required.
+Never invent a medicine that is not clearly referenced in the text. Here is the raw text to parse: \n\n${rawText}`,
+      config: {
+        // Enforces the model to return valid, un-fenced JSON
+        responseMimeType: 'application/json',
+        systemInstruction: `If you are not confident about a field, leave it as an empty string or empty array rather than guessing.`,
+        // Defining the exact JSON structure so Gemini follows it perfectly
+        responseSchema: {
+          type: 'OBJECT',
+          properties: {
+            medicines: {
+              type: 'ARRAY',
+              items: {
+                type: 'OBJECT',
+                properties: {
+                  name: { type: 'STRING' },
+                  dosage: { type: 'STRING' },
+                  instructions: { type: 'STRING' },
+                  suggestedTimes: {
+                    type: 'ARRAY',
+                    items: { type: 'STRING' }
+                  }
+                },
+                required: ['name', 'dosage', 'instructions', 'suggestedTimes']
+              }
+            }
+          },
+          required: ['medicines']
+        }
+      }
     });
 
-    const text = response.content.map(b => b.text || '').join('');
-    const cleaned = text.replace(/```json|```/g, '').trim();
-    const parsed = JSON.parse(cleaned);
+    // Gemini returns clean text directly when responseMimeType is set to application/json
+    const parsed = JSON.parse(response.text);
     res.json(parsed);
   } catch (err) {
     console.error(err);
@@ -49,10 +72,6 @@ referenced in the text.`,
 
 // ---------------------------------------------------------------------
 // 2) Patient chatbot — safety-first system prompt.
-//    This is the core guardrail: the model is explicitly told NOT to
-//    give specific dosing/timing instructions, and to always route
-//    anything specific back to a doctor or pharmacist. It's a support
-//    layer, not a clinical decision-maker.
 // ---------------------------------------------------------------------
 const CHAT_SYSTEM_PROMPT = `You are a supportive assistant inside a
 medicine-reminder app. You are NOT a doctor and must never act like one.
@@ -84,15 +103,16 @@ app.post('/api/chat', async (req, res) => {
       ? `\nThe patient opened this chat from a specific scanned report. Its text:\n"""${reportContext}"""\nYou may refer to it if relevant to their question.`
       : '';
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 500,
-      system: CHAT_SYSTEM_PROMPT + '\n' + medsContext + reportBlock,
-      messages: [{ role: 'user', content: message }],
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.0-flash',
+      contents: message,
+      config: {
+        systemInstruction: CHAT_SYSTEM_PROMPT + '\n' + medsContext + reportBlock,
+        maxOutputTokens: 500,
+      }
     });
 
-    const reply = response.content.map(b => b.text || '').join('');
-    res.json({ reply });
+    res.json({ reply: response.text });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'chat_failed' });
