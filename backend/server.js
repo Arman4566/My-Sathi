@@ -14,7 +14,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const anthropic = new Anthropic({ apiKey:AIzaSyD_jnH-rzy3Arqyl1_H0e9EYByXZKKywz8 });
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // ---------------------------------------------------------------------
 // 1) Prescription text -> structured medicine suggestions
