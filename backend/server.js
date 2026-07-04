@@ -9,7 +9,7 @@ app.use(cors());
 app.use(express.json());
 
 // Automatically initializes using process.env.GEMINI_API_KEY
-const ai = new GoogleGenAI(); 
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 // ---------------------------------------------------------------------
 // 1) Prescription text -> structured medicine suggestions
