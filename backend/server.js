@@ -19,7 +19,7 @@ app.post('/api/parse-prescription', async (req, res) => {
     const { rawText } = req.body;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-1.5-flash',
+      model: 'gemini-3.5-flash',
       contents: `You extract medicine details from raw OCR text of a doctor's
 prescription. The OCR text may be messy, misspelled, or incomplete because
 handwriting recognition is imperfect. Return ONLY valid JSON, no prose, no
@@ -76,7 +76,7 @@ app.post('/api/chat', async (req, res) => {
       : '';
 
     const response = await ai.models.generateContent({
-      model: 'gemini-1.5-flash',
+      model: 'gemini-3.5-flash',
       contents: message,
       config: {
         systemInstruction: CHAT_SYSTEM_PROMPT + '\n' + medsContext + reportBlock,
