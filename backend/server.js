@@ -26,7 +26,7 @@ app.post('/api/parse-prescription', async (req, res) => {
     const { rawText } = req.body;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
+      model: 'gemini-1.5-flash',
       contents: `You extract medicine details from raw OCR text of a doctor's
 prescription. The OCR text may be messy, misspelled, or incomplete because
 handwriting recognition is imperfect. Return ONLY valid JSON matching the exact schema structure required.

@@ -17,7 +17,7 @@ class AiBackendService {
   static final AiBackendService instance = AiBackendService._internal();
 
   // Replace with your deployed backend URL.
-  static const String _baseUrl = 'https://my-sathi.onrender.com';
+  static const String _baseUrl = 'https://my-sathi-2.onrender.com';
 
   Future<List<ParsedMedicineSuggestion>> parsePrescriptionText(
       String rawText) async {
