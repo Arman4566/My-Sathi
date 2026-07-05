@@ -4,9 +4,18 @@ const cors = require('cors');
 const { GoogleGenAI } = require('@google/genai');
 require('dotenv').config();
 
+const { router: authRouter } = require('./auth');
+const medicinesRouter = require('./medicines');
+
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// User accounts (signup/login/forgot-password) and per-user data.
+// See auth.js and medicines.js — medicines.js is the worked example to
+// copy for appointments/prescriptions/medical_reports/health_records.
+app.use('/api/auth', authRouter);
+app.use('/api/medicines', medicinesRouter);
 
 // Automatically initializes using process.env.GEMINI_API_KEY
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
@@ -87,6 +96,46 @@ app.post('/api/chat', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'chat_failed' });
+  }
+});
+
+// ---------------------------------------------------------------------
+// 3) Medical report summary — patient uploads a lab report / doctor's
+//    note, we OCR it on-device (Flutter side) and send the raw text here
+//    for a plain-language summary they can read anytime.
+// ---------------------------------------------------------------------
+const REPORT_SUMMARY_PROMPT = `You summarize a medical report or lab result
+for a patient (not a doctor) to read. Rules:
+- Use plain, everyday language, no unexplained jargon.
+- Structure your reply as: a 2-3 sentence overview, then a short bullet
+  list of the key values/findings and whether each is in the normal range
+  if that's stated or clearly inferable from the text.
+- If a value looks abnormal, say so plainly but do NOT diagnose a
+  condition or tell them what to do about it — just note it and suggest
+  they discuss it with their doctor.
+- If the text is too garbled/incomplete to summarize confidently, say so
+  honestly rather than guessing.
+- Keep the whole summary under 200 words.`;
+
+app.post('/api/summarize-report', async (req, res) => {
+  try {
+    const { rawText } = req.body;
+    if (!rawText || !rawText.trim()) {
+      return res.status(400).json({ error: 'no_text' });
+    }
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.5-flash',
+      contents: rawText,
+      config: {
+        systemInstruction: REPORT_SUMMARY_PROMPT,
+      }
+    });
+
+    res.json({ summary: response.text });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'summarize_failed' });
   }
 });
 

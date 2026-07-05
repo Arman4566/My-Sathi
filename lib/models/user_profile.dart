@@ -7,6 +7,8 @@ class UserProfile {
   final double? weightKg;
   final double? heightCm;
   final String? gender;
+  final String? photoPath;
+  final String bio;
 
   UserProfile({
     required this.id,
@@ -17,6 +19,8 @@ class UserProfile {
     this.weightKg,
     this.heightCm,
     this.gender,
+    this.photoPath,
+    this.bio = '',
   });
 
   /// Body Mass Index, if both weight and height are known.
@@ -36,6 +40,8 @@ class UserProfile {
       'weightKg': weightKg,
       'heightCm': heightCm,
       'gender': gender,
+      'photoPath': photoPath,
+      'bio': bio,
     };
   }
 
@@ -49,6 +55,8 @@ class UserProfile {
       weightKg: map['weightKg'],
       heightCm: map['heightCm'],
       gender: map['gender'],
+      photoPath: map['photoPath'],
+      bio: map['bio'] ?? '',
     );
   }
 
@@ -58,6 +66,8 @@ class UserProfile {
     double? weightKg,
     double? heightCm,
     String? gender,
+    String? photoPath,
+    String? bio,
   }) {
     return UserProfile(
       id: id,
@@ -68,6 +78,8 @@ class UserProfile {
       weightKg: weightKg ?? this.weightKg,
       heightCm: heightCm ?? this.heightCm,
       gender: gender ?? this.gender,
+      photoPath: photoPath ?? this.photoPath,
+      bio: bio ?? this.bio,
     );
   }
 }

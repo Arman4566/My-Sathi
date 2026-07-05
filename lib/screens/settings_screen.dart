@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/settings_service.dart';
 import '../services/auth_service.dart';
+import '../services/app_text.dart';
 import 'login_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -10,13 +11,14 @@ class SettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsService>();
+    final lang = settings.languageCode;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
+      appBar: AppBar(title: Text(AppText.t('settings', lang))),
       body: ListView(
         children: [
           SwitchListTile(
-            title: const Text('Dark mode'),
+            title: Text(AppText.t('dark_mode', lang)),
             secondary: const Icon(Icons.dark_mode_outlined),
             value: settings.themeMode == ThemeMode.dark,
             onChanged: (v) => settings.setDarkMode(v),
@@ -24,7 +26,7 @@ class SettingsScreen extends StatelessWidget {
           const Divider(),
           ListTile(
             leading: const Icon(Icons.language),
-            title: const Text('Language'),
+            title: Text(AppText.t('language', lang)),
             trailing: DropdownButton<String>(
               value: settings.languageCode,
               underline: const SizedBox.shrink(),
@@ -40,7 +42,8 @@ class SettingsScreen extends StatelessWidget {
           const Divider(),
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.redAccent),
-            title: const Text('Log out', style: TextStyle(color: Colors.redAccent)),
+            title: Text(AppText.t('logout', lang),
+                style: const TextStyle(color: Colors.redAccent)),
             onTap: () async {
               await AuthService.instance.logOut();
               if (context.mounted) {

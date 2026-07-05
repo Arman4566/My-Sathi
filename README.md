@@ -1,114 +1,178 @@
-# Patient Care App — Flutter Starter
+# Sathi — Patient Care App
 
-A patient companion app: scan prescriptions with your camera, auto-detect
-medicines with OCR + AI, get daily or custom-schedule medicine reminders,
-appointment alerts, a reports/prescription history, a health log, a
-safety-first chatbot, and local login + profile/settings.
+A patient companion app: scan prescriptions and reports with your camera,
+auto-detect medicines with OCR + AI, get alarm-style medicine and
+appointment reminders, track your health over time, chat with a
+safety-first AI assistant (with voice input), and a real cloud account
+system with password recovery.
 
 ## What's included
 
 ```
 patient_care_app/
 ├── lib/
-│   ├── models/            Medicine, Prescription, Appointment, UserProfile, HealthRecord
+│   ├── models/            Medicine, Prescription, Appointment, UserProfile,
+│   │                      HealthRecord, MedicalReport
 │   ├── services/
-│   │   ├── database_service.dart      SQLite storage (all on-device)
-│   │   ├── notification_service.dart  Local push reminders (daily or custom weekdays)
+│   │   ├── database_service.dart      SQLite (medicines, appointments, reports, health log)
+│   │   ├── notification_service.dart  Alarm-style reminders (see below)
 │   │   ├── ocr_service.dart           On-device text scan (ML Kit) + local fallback parser
-│   │   ├── ai_backend_service.dart    Talks to YOUR backend for AI features
-│   │   ├── auth_service.dart          Local (device-only) signup/login
-│   │   ├── settings_service.dart      Dark mode + language, persisted
-│   │   └── app_text.dart              Minimal EN/HI translation helper
-│   ├── screens/            Login, Signup, Home, Scan, Medicines, Appointments,
-│   │                       Reports history + detail, Health log, Chatbot,
-│   │                       Profile, Settings
+│   │   ├── ai_backend_service.dart    Talks to YOUR backend (Gemini) for AI features
+│   │   ├── auth_service.dart          Cloud signup/login/forgot-password
+│   │   ├── settings_service.dart      Dark mode + language, persisted, app-wide
+│   │   └── app_text.dart              EN/HI translation helper
+│   ├── screens/            Splash, Login, Signup, ForgotPassword, Home, Scan,
+│   │                       Medicines, Appointments, Reports, ReportUpload,
+│   │                       ReportDetail, Health, Chatbot (voice input), Profile,
+│   │                       Settings
 │   └── main.dart
 ├── backend/
-│   └── server.js           Minimal Node/Express proxy to Claude's API
+│   ├── server.js           Express app: Gemini AI endpoints
+│   ├── auth.js              Cloud auth: signup/login/forgot-password/reset-password
+│   ├── medicines.js         Worked example: cloud-synced medicines CRUD
+│   ├── db.js                 Postgres connection pool
+│   └── schema.sql            Table definitions — run this once against your DB
 └── pubspec.yaml
 ```
 
-## ⚠️ Before the chatbot or AI-powered scanning will work
+## What's cloud-synced vs. what's still local — read this first
 
-Both the prescription-scan parser and the chatbot need an LLM, which lives
-in `backend/server.js` — **not** inside the app. Until that backend is
-deployed, `ai_backend_service.dart` is pointed at a placeholder URL and:
-- The chatbot will always reply "Sorry, I couldn't reach the assistant..."
+This app now has **two different storage layers**, and it matters which
+your data is in:
+
+- **Cloud (Postgres, via the backend)**: your **account** — email,
+  password (hashed), name, age, weight, height, gender, bio, avatar. This
+  is what makes login "from anywhere" and forgot-password work, since the
+  account isn't tied to one phone's local database anymore.
+- **Local only (SQLite on the device)**: medicines, appointments, scanned
+  prescriptions/reports, and health log entries. These still live only on
+  the phone that created them — switching phones or reinstalling loses
+  them, same as before.
+
+`backend/medicines.js` is a complete **worked example** of the cloud-sync
+pattern (same idea as `auth.js`, scoped per user) — the Flutter app just
+isn't calling it yet. Extending appointments/reports/health-log to the
+cloud the same way is a very doable next step, but a distinct piece of
+work from what's here, so I've kept it clearly separated rather than
+quietly gluing it on. Ask if you want that built next.
+
+## ⚠️ Before the chatbot or AI-powered features will work
+
+Prescription/report scanning and the chatbot need an LLM (Google Gemini),
+which lives in `backend/server.js` — never inside the app. Until deployed:
+- The chatbot replies "Sorry, I couldn't reach the assistant..."
+- Report summaries fail to generate
 - Prescription scanning falls back to a rough on-device keyword parser
-  (catches lines with words like TAB/CAP/SYRUP/MG) — much less accurate
-  than the real AI parser, but at least gives you something to edit.
 
-### Deploy the backend (Render.com — free tier, beginner-friendly)
+### Deploy the backend (Render.com — free tier)
 
-1. Get an API key from console.anthropic.com.
-2. Put the `backend/` folder in its own GitHub repo (or a folder in your
-   existing repo).
-3. Go to render.com → New → **Web Service** → connect that repo.
+1. Get a Gemini API key from **aistudio.google.com** (or Google Cloud
+   Console). If you ever pasted a key into a chat, screenshot, or public
+   repo, delete it there and generate a fresh one — treat any exposed key
+   as compromised.
+2. Set up a free Postgres database — **Neon** (neon.tech) or **Supabase**
+   (supabase.com) both work well. Copy the connection string they give
+   you (it looks like `postgresql://user:pass@host/db?sslmode=require`).
+3. Run the schema once against that database:
+   - Neon/Supabase both have a SQL editor in their dashboard — paste in
+     the contents of `backend/schema.sql` and run it. (Or use `psql
+     "<your connection string>" -f backend/schema.sql` from a terminal if
+     you have `psql` installed.)
+4. Put the `backend/` folder in its own GitHub repo (or a subfolder of an
+   existing one).
+5. Go to render.com → New → **Web Service** → connect that repo.
    - Root directory: `backend`
    - Build command: `npm install`
    - Start command: `npm start`
-4. Under **Environment**, add a variable: `ANTHROPIC_API_KEY` = your key.
-5. Deploy. Render gives you a public URL like
-   `https://my-sathi-backend.onrender.com`.
-6. Open `lib/services/ai_backend_service.dart` and replace:
+6. Under **Environment**, add:
+   - `GEMINI_API_KEY` = your key
+   - `DATABASE_URL` = your Postgres connection string
+   - `JWT_SECRET` = a long random string (generate one with
+     `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`)
+   - `EMAIL_USER` / `EMAIL_PASS` = optional, for forgot-password emails to
+     actually send (see below) — leave blank during testing; reset codes
+     will just print to Render's logs instead.
+7. Deploy. Render gives you a URL like `https://sathi-backend.onrender.com`.
+8. Open `lib/services/ai_backend_service.dart` and replace:
    ```dart
-   static const String _baseUrl = 'https://my-sathi-backend.onrender.com';
+   static const String baseUrl = 'https://sathi-backend.onrender.com';
    ```
-7. `flutter run` again — scanning and the chatbot should now work.
+   (`auth_service.dart` reuses this same URL automatically.)
+9. `flutter run` again.
 
-(Free-tier Render services "sleep" after inactivity, so the first request
-after a while may take 20–30 seconds — that's normal, not a bug.)
+(Free-tier Render services "sleep" after inactivity — the first request
+after a while can take 20–30 seconds. Normal, not a bug.)
+
+### Setting up forgot-password emails (optional but recommended)
+
+Without `EMAIL_USER`/`EMAIL_PASS` set, reset codes just print to your
+Render logs — fine for testing, useless for real users. To send actual
+emails:
+- **Easiest**: use a Gmail account with an **App Password** (not your
+  normal password) — see support.google.com/accounts/answer/185833.
+  Set `EMAIL_USER` to that Gmail address and `EMAIL_PASS` to the app
+  password.
+- **More scalable**: swap the `nodemailer` Gmail transport in `auth.js`
+  for a transactional email API like Resend or SendGrid — better
+  deliverability at real-world volume, small code change.
 
 ## New features in this version
 
-### Editable, schedulable medicines
-- **Add/edit/delete medicines directly** from "My medicines" — no scan required.
-- **Scan suggestions are now editable** — tap any detected medicine to fix
-  its name, dose, times, frequency, or set an end date before saving.
-- **Frequency**: every day, or custom weekdays (e.g. Mon/Wed/Fri).
-- **Auto-expiry**: set an optional end date and the medicine automatically
-  deactivates (and its reminders cancel) once that date passes. Checked
-  every time the medicine list loads.
+### Splash screen
+A branded loading screen shown while the app initializes (auth check,
+notification setup) — see `splash_screen.dart`.
 
-### Appointments
-- Edit and delete appointments (not just add) — tap an appointment or use
-  the edit/delete icons. Deleting also cancels its reminder.
+### Profile
+WhatsApp-style layout: avatar (tap the camera badge to change it), an
+"About" status line, and tap-to-edit rows for name/age/weight/height/
+gender, with an auto-calculated BMI. Saved to your cloud account.
 
-### Reports & prescription history
-- Every scan is saved permanently under **Reports** on the home screen —
-  revisit the photo and extracted text anytime.
-- From a report's detail view, tap **"Discuss this report with the
-  assistant"** to open the chatbot with that report's text as context, so
-  you can ask questions about it directly.
+### Reports, with AI summaries
+Upload any medical document (lab report, scan, etc.) via **Reports →
+Upload**. It's OCR'd on-device, then sent to your backend for a
+plain-language AI summary — kept permanently, revisit anytime, and jump
+straight into the chatbot to ask questions about a specific report.
 
-### My health
-- A simple health log: weight, blood pressure, blood sugar, and free-text
-  notes, timestamped. Good for tracking trends between doctor visits.
+### Medicine photos
+Attach a photo to any medicine (packaging/strip) when adding or editing
+it — shown as a thumbnail in "My medicines" and on the home dashboard.
 
-### Login, profile, and settings
-- **Local sign-up/login** — see the important caveat below.
-- **Profile**: name, age, weight, height, gender, with an auto-calculated BMI.
-- **Settings**: dark mode toggle, language (English/Hindi — a small
-  starting translation set, see `app_text.dart` to extend it), and logout.
+### Alarm-style reminders
+Medicine and appointment reminders now use full-screen, high-priority
+alarm-style notifications (not just a quiet notification-shade ping), and
+include the prescribing doctor's name when known. They repeat according
+to the medicine's frequency (daily or specific weekdays) and **stop
+automatically once the end date passes** — no manual cleanup needed.
 
-## ⚠️ Important: the login system is local-only
+One honest limitation: this uses Android's notification system with
+`fullScreenIntent` + max priority, which is as close to a "ringing alarm"
+as `flutter_local_notifications` gets. It's not literally the phone's
+Alarm Clock app — for that exact ringing-until-dismissed UX, you'd swap
+to a dedicated package like `alarm`, which is a bigger change (different
+plugin, different Android permissions). Ask if you want that upgrade.
 
-`auth_service.dart` implements signup/login entirely on-device (SQLite +
-hashed password), with no server. This is a reasonable starting point for
-a personal, single-user app, but be aware:
-- **No password recovery.** If forgotten, there's no "reset" flow — you'd
-  need to clear app data and sign up again (losing local health data too).
-- **No multi-device sync.** An account only exists on the phone it was
-  created on.
-- **Not suitable as-is for a real multi-user product.** For that, you'd
-  move authentication to a real backend with proper password hashing
-  (bcrypt/argon2), sessions/tokens, and a account-recovery flow — a
-  meaningfully bigger project than what's here.
+### App-wide dark mode & language
+Dark mode (Settings) now applies everywhere, not just the Settings
+screen — every screen reads colors from the app theme instead of
+hardcoding light-mode colors. Language switching (English/Hindi) is wired
+through the same pattern via `app_text.dart`; the main navigation and
+several screens are translated now — extend `app_text.dart`'s maps to
+cover more strings as you go (anything missing just falls back to
+English, so it degrades safely).
+
+### Reordered home screen
+"Ask assistant" is now the prominent floating action button; "Scan
+prescription" moved into the quick-actions grid.
+
+### Voice input
+The chatbot has a microphone button (uses `speech_to_text`) — tap to
+dictate instead of typing.
 
 ## Step-by-step setup
 
 ### 1. Prerequisites
-- Flutter SDK 3.19+, Android Studio and/or Xcode, Node.js 18+ (for the backend)
+Flutter SDK 3.19+, Android Studio and/or Xcode, Node.js 18+ (backend), a
+free Neon/Supabase Postgres database.
 
 ### 2. Get the Flutter app running
 ```bash
@@ -118,20 +182,24 @@ flutter run
 ```
 
 ### 3. Android setup notes
-- `AndroidManifest.xml` needs:
-  ```xml
-  <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
-  <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
-  <uses-permission android:name="android.permission.CAMERA"/>
-  ```
-- `android/app/build.gradle(.kts)` needs core library desugaring enabled
-  for `flutter_local_notifications` — see comments in that file if you hit
-  a "requires core library desugaring" build error.
-- Minimum SDK: 21+.
+`AndroidManifest.xml` needs:
+```xml
+<uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+<uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+<uses-permission android:name="android.permission.CAMERA"/>
+<uses-permission android:name="android.permission.RECORD_AUDIO"/>
+<uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
+```
+`RECORD_AUDIO` is for voice input in the chatbot; `USE_FULL_SCREEN_INTENT`
+is for the alarm-style reminders. Also: core library desugaring must be
+enabled for `flutter_local_notifications` in
+`android/app/build.gradle(.kts)` (see comments there if you hit a build
+error mentioning it). Minimum SDK: 21+.
 
 ### 4. iOS setup notes
-- `Info.plist` needs `NSCameraUsageDescription` and
-  `NSPhotoLibraryUsageDescription`.
+`Info.plist` needs `NSCameraUsageDescription`,
+`NSPhotoLibraryUsageDescription`, and `NSMicrophoneUsageDescription` (for
+voice input) plus `NSSpeechRecognitionUsageDescription`.
 
 ### 5. Get accurate device timezones (recommended)
 Add `flutter_timezone` and call `tz.setLocalLocation(...)` at startup so
@@ -139,28 +207,30 @@ reminders fire at the correct local time — see comments in
 `notification_service.dart`.
 
 ### 6. Deploy the backend
-See the "Before the chatbot or AI-powered scanning will work" section above.
+See the deployment section above — needed for AI scanning, report
+summaries, the chatbot, and now also login/signup/password reset.
 
 ## Feature ideas worth adding next
 
+- **Sync medicines/appointments/reports/health-log to the cloud** using
+  the same pattern as `medicines.js` — the natural next step given the
+  boundary described above.
 - **Adherence tracking**: "Taken"/"Skipped" actions on the notification
-  itself, plus a weekly adherence % — great to show a doctor.
-- **Refill reminders** based on pill count.
-- **Export reports/medicine history as PDF** for doctor visits.
-- **Caregiver notifications** if a dose is missed (needs patient consent
-  and a lightweight backend to relay it).
-- **Proper multi-device accounts** via a real backend, if you outgrow the
-  local-login approach.
-- **Fuller i18n** — `app_text.dart` currently covers a handful of strings;
-  migrating to Flutter's `gen-l10n` would scale this much further.
+  itself, plus a weekly adherence % for doctor visits.
+- **Literal ringing alarms** via the `alarm` package, if full-screen
+  notifications aren't insistent enough for your users.
+- **Export reports/medicine history as PDF.**
+- **Caregiver notifications** on a missed dose (needs patient consent).
+- **Fuller i18n** via Flutter's `gen-l10n` instead of the hand-rolled
+  `app_text.dart` map, once you're translating most of the app.
 
-## A note on health data
+## A note on health and account data
 
-Medicine, prescription, appointment, profile, and health-log data all stay
-in a local SQLite database on the device. Only OCR text sent for AI
-parsing and chat messages (including report text, if you use "Discuss
-this report") leave the device, and only to your own backend. If you add
-cloud sync or multi-device accounts later, treat this as health data:
-encrypt in transit and at rest, and check applicable regulations (HIPAA in
-the US, GDPR in the EU, etc.) before launching.
-
+Account info (email, hashed password, profile fields) lives in your cloud
+Postgres database. Medicines, appointments, reports, and health-log
+entries still live only in local SQLite on the device (see the boundary
+section above). OCR text sent for AI parsing/summaries and chat messages
+go to your backend only. If you extend cloud sync to the rest of the
+data, treat all of it as health data: encrypt in transit and at rest, and
+check applicable regulations (HIPAA in the US, GDPR in the EU, etc.)
+before launching to real users.

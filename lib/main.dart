@@ -2,9 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'services/notification_service.dart';
 import 'services/settings_service.dart';
-import 'services/auth_service.dart';
-import 'screens/home_screen.dart';
-import 'screens/login_screen.dart';
+import 'screens/splash_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -29,14 +27,24 @@ class PatientCareApp extends StatelessWidget {
     final settings = context.watch<SettingsService>();
 
     return MaterialApp(
-      title: 'Patient Care',
+      title: 'Sathi',
       debugShowCheckedModeBanner: false,
       themeMode: settings.themeMode,
+      // Every screen should read colors from Theme.of(context) rather than
+      // hardcoding Colors.white / a fixed hex background — that's what
+      // makes dark mode apply consistently across the whole app instead
+      // of only the screens that happen to use default Material colors.
       theme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.light,
         colorSchemeSeed: const Color(0xFF5B7CFA),
         scaffoldBackgroundColor: const Color(0xFFF6F8FB),
+        cardColor: Colors.white,
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFFF6F8FB),
+          foregroundColor: Colors.black87,
+          elevation: 0,
+        ),
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF5B7CFA),
@@ -51,43 +59,24 @@ class PatientCareApp extends StatelessWidget {
         useMaterial3: true,
         brightness: Brightness.dark,
         colorSchemeSeed: const Color(0xFF5B7CFA),
+        scaffoldBackgroundColor: const Color(0xFF121318),
+        cardColor: const Color(0xFF1E2028),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFF121318),
+          foregroundColor: Colors.white,
+          elevation: 0,
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF5B7CFA),
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12)),
+          ),
+        ),
       ),
-      home: const AuthGate(),
+      home: const SplashScreen(),
     );
-  }
-}
-
-/// Decides whether to show the login screen or go straight to Home,
-/// based on whether a local profile session already exists.
-class AuthGate extends StatefulWidget {
-  const AuthGate({super.key});
-  @override
-  State<AuthGate> createState() => _AuthGateState();
-}
-
-class _AuthGateState extends State<AuthGate> {
-  bool _loading = true;
-  bool _loggedIn = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _check();
-  }
-
-  Future<void> _check() async {
-    final profile = await AuthService.instance.getCurrentProfile();
-    setState(() {
-      _loggedIn = profile != null;
-      _loading = false;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_loading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-    return _loggedIn ? const HomeScreen() : const LoginScreen();
   }
 }

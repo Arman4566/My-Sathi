@@ -94,9 +94,10 @@ class _SignupScreenState extends State<SignupScreen> {
               ),
               const SizedBox(height: 12),
               Text(
-                'Note: this account lives only on this phone — there is no '
-                'password recovery yet. Keep your login handy.',
-                style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                'Your account is saved securely to your account server, so you '
+                'can log in from another device and recover your password if '
+                'you forget it.',
+                style: TextStyle(color: Theme.of(context).hintColor, fontSize: 12),
                 textAlign: TextAlign.center,
               ),
             ],

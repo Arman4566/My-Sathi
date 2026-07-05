@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../services/ai_backend_service.dart';
 import '../services/database_service.dart';
 
@@ -28,8 +29,11 @@ class ChatbotScreen extends StatefulWidget {
 class _ChatbotScreenState extends State<ChatbotScreen> {
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
+  final _speech = stt.SpeechToText();
   late final List<_ChatMessage> _messages;
   bool _sending = false;
+  bool _listening = false;
+  bool _speechAvailable = false;
 
   @override
   void initState() {
@@ -49,6 +53,39 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
         false,
       ),
     ];
+    _initSpeech();
+  }
+
+  Future<void> _initSpeech() async {
+    final available = await _speech.initialize(
+      onStatus: (status) {
+        if (status == 'done' || status == 'notListening') {
+          setState(() => _listening = false);
+        }
+      },
+      onError: (error) => setState(() => _listening = false),
+    );
+    setState(() => _speechAvailable = available);
+  }
+
+  Future<void> _toggleListening() async {
+    if (!_speechAvailable) return;
+
+    if (_listening) {
+      await _speech.stop();
+      setState(() => _listening = false);
+      return;
+    }
+
+    setState(() => _listening = true);
+    await _speech.listen(
+      onResult: (result) {
+        setState(() => _controller.text = result.recognizedWords);
+        if (result.finalResult) {
+          setState(() => _listening = false);
+        }
+      },
+    );
   }
 
   Future<void> _send() async {
@@ -87,7 +124,19 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
   }
 
   @override
+  void dispose() {
+    _speech.stop();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final bubbleColor = isDark ? const Color(0xFF2A2D3A) : Colors.grey.shade200;
+    final bubbleTextColor = isDark ? Colors.white : Colors.black87;
+    final inputFillColor = isDark ? const Color(0xFF1E2028) : Colors.grey.shade100;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Health Assistant')),
       body: Column(
@@ -109,13 +158,13 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                     constraints: BoxConstraints(
                         maxWidth: MediaQuery.of(context).size.width * 0.75),
                     decoration: BoxDecoration(
-                      color: m.fromUser ? const Color(0xFF5B7CFA) : Colors.grey.shade200,
+                      color: m.fromUser ? const Color(0xFF5B7CFA) : bubbleColor,
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Text(
                       m.text,
                       style: TextStyle(
-                          color: m.fromUser ? Colors.white : Colors.black87),
+                          color: m.fromUser ? Colors.white : bubbleTextColor),
                     ),
                   ),
                 );
@@ -127,18 +176,40 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
               padding: EdgeInsets.all(8.0),
               child: LinearProgressIndicator(),
             ),
+          if (_listening)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  Icon(Icons.mic, color: Colors.redAccent, size: 16),
+                  const SizedBox(width: 6),
+                  Text('Listening…',
+                      style: TextStyle(color: Colors.redAccent, fontSize: 12)),
+                ],
+              ),
+            ),
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.all(10),
               child: Row(
                 children: [
+                  IconButton(
+                    onPressed: _speechAvailable ? _toggleListening : null,
+                    icon: Icon(
+                      _listening ? Icons.mic : Icons.mic_none,
+                      color: _listening ? Colors.redAccent : null,
+                    ),
+                    tooltip: _speechAvailable
+                        ? 'Voice input'
+                        : 'Voice input unavailable on this device',
+                  ),
                   Expanded(
                     child: TextField(
                       controller: _controller,
                       decoration: InputDecoration(
                         hintText: 'e.g. "I missed my evening dose"',
                         filled: true,
-                        fillColor: Colors.grey.shade100,
+                        fillColor: inputFillColor,
                         border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(24),
                             borderSide: BorderSide.none),

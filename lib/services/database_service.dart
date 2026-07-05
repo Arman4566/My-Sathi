@@ -5,6 +5,7 @@ import '../models/prescription.dart';
 import '../models/appointment.dart';
 import '../models/user_profile.dart';
 import '../models/health_record.dart';
+import '../models/medical_report.dart';
 
 /// Single source of truth for all local persistence.
 /// Everything lives on-device (SQLite) so patient health data
@@ -28,7 +29,7 @@ class DatabaseService {
 
     return openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE medicines (
@@ -42,7 +43,8 @@ class DatabaseService {
             prescriptionId TEXT,
             active INTEGER,
             frequency TEXT,
-            customDays TEXT
+            customDays TEXT,
+            photoPath TEXT
           )
         ''');
         await db.execute('''
@@ -74,7 +76,8 @@ class DatabaseService {
             age INTEGER,
             weightKg REAL,
             heightCm REAL,
-            gender TEXT
+            gender TEXT,
+            photoPath TEXT
           )
         ''');
         await db.execute('''
@@ -85,6 +88,16 @@ class DatabaseService {
             bloodPressure TEXT,
             sugarLevel REAL,
             notes TEXT
+          )
+        ''');
+        await db.execute('''
+          CREATE TABLE medical_reports (
+            id TEXT PRIMARY KEY,
+            title TEXT,
+            filePath TEXT,
+            rawText TEXT,
+            summary TEXT,
+            uploadedDate TEXT
           )
         ''');
       },
@@ -116,6 +129,22 @@ class DatabaseService {
               bloodPressure TEXT,
               sugarLevel REAL,
               notes TEXT
+            )
+          ''');
+        }
+        if (oldVersion < 3) {
+          // Photo support for medicines and profiles, plus the new
+          // medical reports table for the "upload a report" feature.
+          await db.execute('ALTER TABLE medicines ADD COLUMN photoPath TEXT');
+          await db.execute('ALTER TABLE profiles ADD COLUMN photoPath TEXT');
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS medical_reports (
+              id TEXT PRIMARY KEY,
+              title TEXT,
+              filePath TEXT,
+              rawText TEXT,
+              summary TEXT,
+              uploadedDate TEXT
             )
           ''');
         }
@@ -206,7 +235,11 @@ class DatabaseService {
     await db.delete('appointments', where: 'id = ?', whereArgs: [id]);
   }
 
-  // ---------- Profiles (local login) ----------
+  // ---------- Profiles (LEGACY — see note below) ----------
+  // These local-profile methods are no longer used by AuthService, which
+  // now talks to the cloud backend (backend/auth.js) for accounts. Left
+  // here in case you want a local cache/fallback later; safe to delete
+  // otherwise.
   Future<void> insertProfile(UserProfile p) async {
     final db = await database;
     await db.insert('profiles', p.toMap(),
@@ -249,5 +282,23 @@ class DatabaseService {
   Future<void> deleteHealthRecord(String id) async {
     final db = await database;
     await db.delete('health_records', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // ---------- Medical reports ----------
+  Future<void> insertMedicalReport(MedicalReport r) async {
+    final db = await database;
+    await db.insert('medical_reports', r.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<List<MedicalReport>> getMedicalReports() async {
+    final db = await database;
+    final rows = await db.query('medical_reports', orderBy: 'uploadedDate DESC');
+    return rows.map((r) => MedicalReport.fromMap(r)).toList();
+  }
+
+  Future<void> deleteMedicalReport(String id) async {
+    final db = await database;
+    await db.delete('medical_reports', where: 'id = ?', whereArgs: [id]);
   }
 }

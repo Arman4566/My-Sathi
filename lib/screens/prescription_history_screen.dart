@@ -32,7 +32,7 @@ class _PrescriptionHistoryScreenState extends State<PrescriptionHistoryScreen> {
           ? Center(
               child: Text(
                 'No scanned prescriptions or reports yet.',
-                style: TextStyle(color: Colors.grey.shade600),
+                style: TextStyle(color: Theme.of(context).hintColor),
               ),
             )
           : ListView.builder(

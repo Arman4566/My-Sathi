@@ -16,8 +16,10 @@ class AiBackendService {
   AiBackendService._internal();
   static final AiBackendService instance = AiBackendService._internal();
 
-  // Replace with your deployed backend URL.
-  static const String _baseUrl = 'https://my-sathi-2.onrender.com';
+  // Replace with your deployed backend URL. Shared by auth_service.dart
+  // too, so there's only one place to update after deploying.
+  static const String baseUrl = 'https://YOUR-BACKEND-URL.example.com';
+  static const String _baseUrl = baseUrl;
 
   Future<List<ParsedMedicineSuggestion>> parsePrescriptionText(
       String rawText) async {
@@ -63,5 +65,24 @@ class AiBackendService {
 
     final data = jsonDecode(res.body) as Map<String, dynamic>;
     return data['reply'] as String;
+  }
+
+  /// Sends the raw OCR text of an uploaded report to the backend for a
+  /// plain-language AI summary. See REPORT_SUMMARY_PROMPT in server.js
+  /// for the exact rules the summary follows (no diagnosing, flags
+  /// abnormal values without interpreting them).
+  Future<String> summarizeReport(String rawText) async {
+    final res = await http.post(
+      Uri.parse('$_baseUrl/api/summarize-report'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'rawText': rawText}),
+    );
+
+    if (res.statusCode != 200) {
+      throw Exception('Summary request failed: ${res.statusCode}');
+    }
+
+    final data = jsonDecode(res.body) as Map<String, dynamic>;
+    return data['summary'] as String;
   }
 }

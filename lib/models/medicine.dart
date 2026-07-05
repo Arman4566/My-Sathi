@@ -15,6 +15,8 @@ class Medicine {
   final bool active;
   final MedicineFrequency frequency;
   final List<int> customDays; // DateTime.monday(1) .. DateTime.sunday(7)
+  final String? photoPath; // optional photo of the medicine/packaging
+  final String? prescribedBy; // doctor's name, included in reminder alarms
 
   Medicine({
     required this.id,
@@ -28,6 +30,8 @@ class Medicine {
     this.active = true,
     this.frequency = MedicineFrequency.daily,
     this.customDays = const [],
+    this.photoPath,
+    this.prescribedBy,
   });
 
   /// True if today is past this medicine's end date — used to
@@ -48,6 +52,8 @@ class Medicine {
       'active': active ? 1 : 0,
       'frequency': frequency.name,
       'customDays': customDays.join(','),
+      'photoPath': photoPath,
+      'prescribedBy': prescribedBy,
     };
   }
 
@@ -74,6 +80,8 @@ class Medicine {
               .split(',')
               .map((e) => int.parse(e))
               .toList(),
+      photoPath: map['photoPath'],
+      prescribedBy: map['prescribedBy'],
     );
   }
 
@@ -87,6 +95,8 @@ class Medicine {
     bool? active,
     MedicineFrequency? frequency,
     List<int>? customDays,
+    String? photoPath,
+    String? prescribedBy,
   }) {
     return Medicine(
       id: id,
@@ -100,6 +110,8 @@ class Medicine {
       active: active ?? this.active,
       frequency: frequency ?? this.frequency,
       customDays: customDays ?? this.customDays,
+      photoPath: photoPath ?? this.photoPath,
+      prescribedBy: prescribedBy ?? this.prescribedBy,
     );
   }
 }

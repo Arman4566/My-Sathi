@@ -325,7 +325,7 @@ class _ScanPrescriptionScreenState extends State<ScanPrescriptionScreen> {
               const SizedBox(height: 4),
               Text(
                 'Automatic reading isn\'t perfect — tap any item to fix the name, dose, times, frequency, or add an end date.',
-                style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                style: TextStyle(color: Theme.of(context).hintColor, fontSize: 12),
               ),
               const SizedBox(height: 12),
               Expanded(

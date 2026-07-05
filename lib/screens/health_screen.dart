@@ -93,7 +93,7 @@ class _HealthScreenState extends State<HealthScreen> {
           ? Center(
               child: Text('No health records yet.\nTap + to log how you feel today.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.grey.shade600)))
+                  style: TextStyle(color: Theme.of(context).hintColor)))
           : ListView.builder(
               padding: const EdgeInsets.all(12),
               itemCount: _records.length,

@@ -1,4 +1,6 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:uuid/uuid.dart';
 import '../models/medicine.dart';
 import '../services/database_service.dart';
@@ -80,6 +82,7 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
     MedicineFrequency frequency = existing?.frequency ?? MedicineFrequency.daily;
     final Set<int> customDays = {...(existing?.customDays ?? [])};
     DateTime? endDate = existing?.endDate;
+    String? photoPath = existing?.photoPath;
 
     await showDialog(
       context: context,
@@ -91,6 +94,49 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Center(
+                  child: Stack(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: photoPath != null && File(photoPath!).existsSync()
+                            ? Image.file(File(photoPath!),
+                                width: 90, height: 90, fit: BoxFit.cover)
+                            : Container(
+                                width: 90,
+                                height: 90,
+                                color: Theme.of(ctx).colorScheme.primaryContainer,
+                                child: Icon(Icons.medication,
+                                    color: Theme.of(ctx).colorScheme.primary, size: 36),
+                              ),
+                      ),
+                      Positioned(
+                        bottom: 0,
+                        right: 0,
+                        child: InkWell(
+                          onTap: () async {
+                            final picked = await ImagePicker().pickImage(
+                                source: ImageSource.camera, imageQuality: 85);
+                            if (picked != null) {
+                              setStateDialog(() => photoPath = picked.path);
+                            }
+                          },
+                          borderRadius: BorderRadius.circular(16),
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF5B7CFA),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.camera_alt,
+                                color: Colors.white, size: 16),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
                 TextField(
                   controller: nameCtrl,
                   decoration: const InputDecoration(labelText: 'Medicine name'),
@@ -197,7 +243,7 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
                 Text(
                   'When an end date passes, this medicine is automatically '
                   'stopped and its reminders removed.',
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                  style: TextStyle(color: Theme.of(ctx).hintColor, fontSize: 12),
                 ),
               ],
             ),
@@ -232,6 +278,7 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
                   endDate: endDate,
                   frequency: frequency,
                   customDays: customDays.toList()..sort(),
+                  photoPath: photoPath,
                 );
 
                 if (existing != null) {
@@ -273,7 +320,13 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
 
                 return Card(
                   child: ListTile(
-                    leading: const Icon(Icons.medication, color: Color(0xFF5B7CFA)),
+                    leading: (m.photoPath != null && File(m.photoPath!).existsSync())
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.file(File(m.photoPath!),
+                                width: 44, height: 44, fit: BoxFit.cover),
+                          )
+                        : const Icon(Icons.medication, color: Color(0xFF5B7CFA)),
                     title: Text(m.name),
                     subtitle: Text(
                         '${m.dosage} • ${m.instructions}\n$freqLabel at ${m.times.join(", ")}$endLabel'),
