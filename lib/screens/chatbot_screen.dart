@@ -12,9 +12,9 @@ class _ChatMessage {
   final String text;
   final bool fromUser;
   final ChatAction? action;
-  bool actionHandled;
+  bool actionHandled = false;
 
-  _ChatMessage(this.text, this.fromUser, {this.action, this.actionHandled = false});
+  _ChatMessage(this.text, this.fromUser, {this.action});
 }
 
 class ChatbotScreen extends StatefulWidget {

@@ -153,8 +153,8 @@ class _ScanPrescriptionScreenState extends State<ScanPrescriptionScreen> {
                 RadioGroup<MedicineFrequency>(
                   groupValue: frequency,
                   onChanged: (v) => setStateDialog(() => frequency = v!),
-                  child: Column(
-                    children: const [
+                  child: const Column(
+                    children: [
                       RadioListTile<MedicineFrequency>(
                         contentPadding: EdgeInsets.zero,
                         dense: true,

@@ -181,8 +181,8 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
                 RadioGroup<MedicineFrequency>(
                   groupValue: frequency,
                   onChanged: (v) => setStateDialog(() => frequency = v!),
-                  child: Column(
-                    children: const [
+                  child: const Column(
+                    children: [
                       RadioListTile<MedicineFrequency>(
                         contentPadding: EdgeInsets.zero,
                         dense: true,
@@ -312,11 +312,11 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
                       .scheduleMedicineReminders(medicine);
                 } catch (e) {
                   if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                       content: Text(
                           'Saved, but reminders could not be scheduled. '
                           'Check notification/alarm permissions in phone settings.'),
-                      duration: const Duration(seconds: 5),
+                      duration: Duration(seconds: 5),
                     ));
                   }
                 }
