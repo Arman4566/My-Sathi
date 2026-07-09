@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import '../models/medicine.dart';
@@ -6,6 +7,7 @@ import '../models/appointment.dart';
 import '../models/user_profile.dart';
 import '../models/health_record.dart';
 import '../models/medical_report.dart';
+import 'cloud_sync_service.dart';
 
 /// Single source of truth for all local persistence.
 /// Everything lives on-device (SQLite) so patient health data
@@ -153,15 +155,21 @@ class DatabaseService {
   }
 
   // ---------- Medicines ----------
-  Future<void> insertMedicine(Medicine m) async {
+  /// [sync] pushes this write to the cloud backend (fire-and-forget).
+  /// Set to false only when writing data that just came FROM the cloud
+  /// (see CloudSyncService.pullAllAndMerge), so pulling doesn't
+  /// immediately push the same data straight back.
+  Future<void> insertMedicine(Medicine m, {bool sync = true}) async {
     final db = await database;
     await db.insert('medicines', m.toMap(),
         conflictAlgorithm: ConflictAlgorithm.replace);
+    if (sync) unawaited(CloudSyncService.instance.pushMedicine(m));
   }
 
-  Future<void> updateMedicine(Medicine m) async {
+  Future<void> updateMedicine(Medicine m, {bool sync = true}) async {
     final db = await database;
     await db.update('medicines', m.toMap(), where: 'id = ?', whereArgs: [m.id]);
+    if (sync) unawaited(CloudSyncService.instance.pushMedicine(m));
   }
 
   /// Returns active medicines, having first auto-deactivated any whose
@@ -177,31 +185,50 @@ class DatabaseService {
   Future<void> _deactivateExpiredMedicines() async {
     final db = await database;
     final nowIso = DateTime.now().toIso8601String();
+    final expiring = await db.query(
+      'medicines',
+      where: 'active = 1 AND endDate IS NOT NULL AND endDate < ?',
+      whereArgs: [nowIso],
+    );
     await db.update(
       'medicines',
       {'active': 0},
       where: 'active = 1 AND endDate IS NOT NULL AND endDate < ?',
       whereArgs: [nowIso],
     );
+    // Reflect the auto-expiry in the cloud too, so it doesn't come back
+    // as "active" when pulled on another device.
+    for (final row in expiring) {
+      final medicine = Medicine.fromMap(row).copyWith(active: false);
+      unawaited(CloudSyncService.instance.pushMedicine(medicine));
+    }
   }
 
-  Future<void> deactivateMedicine(String id) async {
+  Future<void> deactivateMedicine(String id, {bool sync = true}) async {
     final db = await database;
     await db.update('medicines', {'active': 0}, where: 'id = ?', whereArgs: [id]);
+    if (sync) {
+      final rows = await db.query('medicines', where: 'id = ?', whereArgs: [id]);
+      if (rows.isNotEmpty) {
+        unawaited(CloudSyncService.instance.pushMedicine(Medicine.fromMap(rows.first)));
+      }
+    }
   }
 
   /// Permanently removes a medicine record (used by the "Delete" action,
   /// as opposed to "Stop" which just deactivates it but keeps history).
-  Future<void> deleteMedicine(String id) async {
+  Future<void> deleteMedicine(String id, {bool sync = true}) async {
     final db = await database;
     await db.delete('medicines', where: 'id = ?', whereArgs: [id]);
+    if (sync) unawaited(CloudSyncService.instance.deleteMedicine(id));
   }
 
   // ---------- Prescriptions ----------
-  Future<void> insertPrescription(Prescription p) async {
+  Future<void> insertPrescription(Prescription p, {bool sync = true}) async {
     final db = await database;
     await db.insert('prescriptions', p.toMap(),
         conflictAlgorithm: ConflictAlgorithm.replace);
+    if (sync) unawaited(CloudSyncService.instance.pushPrescription(p));
   }
 
   Future<List<Prescription>> getPrescriptions() async {
@@ -210,16 +237,18 @@ class DatabaseService {
     return rows.map((r) => Prescription.fromMap(r)).toList();
   }
 
-  Future<void> deletePrescription(String id) async {
+  Future<void> deletePrescription(String id, {bool sync = true}) async {
     final db = await database;
     await db.delete('prescriptions', where: 'id = ?', whereArgs: [id]);
+    if (sync) unawaited(CloudSyncService.instance.deletePrescription(id));
   }
 
   // ---------- Appointments ----------
-  Future<void> insertAppointment(Appointment a) async {
+  Future<void> insertAppointment(Appointment a, {bool sync = true}) async {
     final db = await database;
     await db.insert('appointments', a.toMap(),
         conflictAlgorithm: ConflictAlgorithm.replace);
+    if (sync) unawaited(CloudSyncService.instance.pushAppointment(a));
   }
 
   Future<List<Appointment>> getUpcomingAppointments() async {
@@ -230,9 +259,10 @@ class DatabaseService {
     return rows.map((r) => Appointment.fromMap(r)).toList();
   }
 
-  Future<void> deleteAppointment(String id) async {
+  Future<void> deleteAppointment(String id, {bool sync = true}) async {
     final db = await database;
     await db.delete('appointments', where: 'id = ?', whereArgs: [id]);
+    if (sync) unawaited(CloudSyncService.instance.deleteAppointment(id));
   }
 
   // ---------- Profiles (LEGACY — see note below) ----------
@@ -267,10 +297,11 @@ class DatabaseService {
   }
 
   // ---------- Health records ----------
-  Future<void> insertHealthRecord(HealthRecord r) async {
+  Future<void> insertHealthRecord(HealthRecord r, {bool sync = true}) async {
     final db = await database;
     await db.insert('health_records', r.toMap(),
         conflictAlgorithm: ConflictAlgorithm.replace);
+    if (sync) unawaited(CloudSyncService.instance.pushHealthRecord(r));
   }
 
   Future<List<HealthRecord>> getHealthRecords() async {
@@ -279,16 +310,18 @@ class DatabaseService {
     return rows.map((r) => HealthRecord.fromMap(r)).toList();
   }
 
-  Future<void> deleteHealthRecord(String id) async {
+  Future<void> deleteHealthRecord(String id, {bool sync = true}) async {
     final db = await database;
     await db.delete('health_records', where: 'id = ?', whereArgs: [id]);
+    if (sync) unawaited(CloudSyncService.instance.deleteHealthRecord(id));
   }
 
   // ---------- Medical reports ----------
-  Future<void> insertMedicalReport(MedicalReport r) async {
+  Future<void> insertMedicalReport(MedicalReport r, {bool sync = true}) async {
     final db = await database;
     await db.insert('medical_reports', r.toMap(),
         conflictAlgorithm: ConflictAlgorithm.replace);
+    if (sync) unawaited(CloudSyncService.instance.pushMedicalReport(r));
   }
 
   Future<List<MedicalReport>> getMedicalReports() async {
@@ -297,8 +330,9 @@ class DatabaseService {
     return rows.map((r) => MedicalReport.fromMap(r)).toList();
   }
 
-  Future<void> deleteMedicalReport(String id) async {
+  Future<void> deleteMedicalReport(String id, {bool sync = true}) async {
     final db = await database;
     await db.delete('medical_reports', where: 'id = ?', whereArgs: [id]);
+    if (sync) unawaited(CloudSyncService.instance.deleteMedicalReport(id));
   }
 }

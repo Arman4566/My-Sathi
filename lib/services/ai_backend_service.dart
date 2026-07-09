@@ -2,6 +2,28 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'ocr_service.dart';
 
+/// A change the assistant is proposing based on the conversation — e.g.
+/// "add this medicine". The app ALWAYS shows this to the user as a
+/// confirmation card and never saves it automatically; see
+/// chatbot_screen.dart. Same "AI suggests, human confirms" pattern used
+/// for prescription scanning.
+class ChatAction {
+  final String type; // 'add_medicine' | 'add_appointment'
+  final Map<String, dynamic> data;
+
+  ChatAction({required this.type, required this.data});
+
+  factory ChatAction.fromJson(Map<String, dynamic> json) {
+    return ChatAction(type: json['type'] as String, data: json);
+  }
+}
+
+class ChatResponse {
+  final String reply;
+  final ChatAction? action;
+  ChatResponse({required this.reply, this.action});
+}
+
 /// This talks to YOUR OWN backend server — never directly to an LLM
 /// provider's API from inside the app. Two reasons:
 ///  1. Security: an API key bundled inside a Flutter app can be extracted
@@ -11,14 +33,15 @@ import 'ocr_service.dart';
 ///     be prompted around it by anything embedded in a photo or message.
 ///
 /// See the README for a minimal Node/Express backend you can deploy
-/// (Render, Railway, Fly.io, your own VPS, etc.) that proxies to Claude.
+/// (Render, Railway, Fly.io, your own VPS, etc.) that proxies to Gemini.
 class AiBackendService {
   AiBackendService._internal();
   static final AiBackendService instance = AiBackendService._internal();
 
   // Replace with your deployed backend URL. Shared by auth_service.dart
-  // too, so there's only one place to update after deploying.
-  static const String baseUrl = 'https://my-sathi-2.onrender.com';
+  // and cloud_sync_service.dart too, so there's only one place to update
+  // after deploying.
+  static const String baseUrl = 'https://YOUR-BACKEND-URL.example.com';
   static const String _baseUrl = baseUrl;
 
   Future<List<ParsedMedicineSuggestion>> parsePrescriptionText(
@@ -40,13 +63,19 @@ class AiBackendService {
         .toList();
   }
 
-  /// Sends a chat message plus lightweight context (current medicine names
-  /// only — not full health history) to the backend chatbot endpoint.
-  /// [reportContext] optionally carries the raw text of a specific scanned
-  /// report the user opened this chat from, so the assistant can discuss it.
-  Future<String> sendChatMessage({
+  /// Sends a chat message along with the patient's actual app data —
+  /// medicines, appointments, recent report summaries, and profile — so
+  /// the assistant can answer questions about their real situation and
+  /// (only when explicitly asked, and with enough detail) propose adding
+  /// a medicine or appointment via the returned [ChatResponse.action].
+  /// [reportContext] optionally carries the raw text of a specific
+  /// scanned report the user opened this chat from.
+  Future<ChatResponse> sendChatMessage({
     required String message,
-    required List<String> currentMedicineNames,
+    List<Map<String, dynamic>> medicines = const [],
+    List<Map<String, dynamic>> appointments = const [],
+    List<Map<String, dynamic>> reports = const [],
+    Map<String, dynamic>? profile,
     String? reportContext,
   }) async {
     final res = await http.post(
@@ -54,7 +83,10 @@ class AiBackendService {
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
         'message': message,
-        'currentMedicines': currentMedicineNames,
+        'medicines': medicines,
+        'appointments': appointments,
+        'reports': reports,
+        'profile': profile,
         'reportContext': reportContext,
       }),
     );
@@ -64,7 +96,12 @@ class AiBackendService {
     }
 
     final data = jsonDecode(res.body) as Map<String, dynamic>;
-    return data['reply'] as String;
+    return ChatResponse(
+      reply: data['reply'] as String,
+      action: data['action'] != null
+          ? ChatAction.fromJson(data['action'] as Map<String, dynamic>)
+          : null,
+    );
   }
 
   /// Sends the raw OCR text of an uploaded report to the backend for a

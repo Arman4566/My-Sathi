@@ -1,12 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:uuid/uuid.dart';
+import '../models/medicine.dart';
+import '../models/appointment.dart';
 import '../services/ai_backend_service.dart';
 import '../services/database_service.dart';
+import '../services/auth_service.dart';
+import '../services/notification_service.dart';
 
 class _ChatMessage {
   final String text;
   final bool fromUser;
-  _ChatMessage(this.text, this.fromUser);
+  final ChatAction? action;
+  bool actionHandled;
+
+  _ChatMessage(this.text, this.fromUser, {this.action, this.actionHandled = false});
 }
 
 class ChatbotScreen extends StatefulWidget {
@@ -45,11 +53,10 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                 "Ask me anything about it — I'll explain in plain language. "
                 "For anything specific to your treatment, I'll always suggest "
                 "checking with your doctor or pharmacist too."
-            : "Hi! I'm your health assistant. I can help with general questions "
-                "about your reminders, or point you in the right direction if you're "
-                "not sure what to do. For anything specific to your medicine or "
-                "condition, I'll always suggest checking with your doctor or "
-                "pharmacist — that's for your safety.",
+            : "Hi! I'm your health assistant. I know your current medicines, "
+                "appointments, and reports, so feel free to ask me about your "
+                "own situation — or ask me to add a medicine or appointment "
+                "and I'll confirm the details with you before saving anything.",
         false,
       ),
     ];
@@ -99,14 +106,53 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     });
 
     try {
+      // Gather the patient's real data so the assistant can answer from
+      // it and (only when explicitly asked) propose adding something.
       final meds = await DatabaseService.instance.getActiveMedicines();
-      final names = meds.map((m) => m.name).toList();
-      final reply = await AiBackendService.instance.sendChatMessage(
+      final appts = await DatabaseService.instance.getUpcomingAppointments();
+      final reports = await DatabaseService.instance.getMedicalReports();
+      final profile = await AuthService.instance.getCurrentProfile();
+
+      final response = await AiBackendService.instance.sendChatMessage(
         message: text,
-        currentMedicineNames: names,
+        medicines: meds
+            .map((m) => {
+                  'name': m.name,
+                  'dosage': m.dosage,
+                  'instructions': m.instructions,
+                  'times': m.times,
+                  'frequency': m.frequency.name,
+                  'endDate': m.endDate?.toIso8601String(),
+                })
+            .toList(),
+        appointments: appts
+            .map((a) => {
+                  'doctorName': a.doctorName,
+                  'location': a.location,
+                  'dateTime': a.dateTime.toIso8601String(),
+                })
+            .toList(),
+        reports: reports
+            .take(5)
+            .map((r) => {
+                  'title': r.title,
+                  'uploadedDate': r.uploadedDate.toIso8601String(),
+                  'summary': r.summary,
+                })
+            .toList(),
+        profile: profile == null
+            ? null
+            : {
+                'age': profile.age,
+                'weightKg': profile.weightKg,
+                'heightCm': profile.heightCm,
+                'gender': profile.gender,
+              },
         reportContext: widget.initialContextText,
       );
-      setState(() => _messages.add(_ChatMessage(reply, false)));
+
+      setState(() => _messages
+          .add(_ChatMessage(response.reply, false, action: response.action)));
     } catch (e) {
       setState(() => _messages.add(_ChatMessage(
           "Sorry, I couldn't reach the assistant right now. If this is "
@@ -115,12 +161,90 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     } finally {
       setState(() => _sending = false);
       await Future.delayed(const Duration(milliseconds: 100));
-      _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-      );
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
     }
+  }
+
+  /// Actually saves the action the assistant proposed. Only ever called
+  /// from an explicit user tap on the confirmation card — the assistant
+  /// itself never writes anything.
+  Future<void> _confirmAction(_ChatMessage message) async {
+    final action = message.action!;
+    try {
+      if (action.type == 'add_medicine') {
+        final times = (action.data['times'] as List?)?.cast<String>() ?? [];
+        if ((action.data['name'] as String? ?? '').isEmpty || times.isEmpty) {
+          throw Exception('Missing name or times');
+        }
+        final frequencyStr = action.data['frequency'] as String? ?? 'daily';
+        final customDays = (action.data['customDays'] as List?)
+                ?.map((e) => (e as num).toInt())
+                .toList() ??
+            [];
+        final endDateStr = action.data['endDate'] as String?;
+
+        final medicine = Medicine(
+          id: const Uuid().v4(),
+          name: action.data['name'] as String,
+          dosage: action.data['dosage'] as String? ?? '',
+          instructions: action.data['instructions'] as String? ?? '',
+          times: times,
+          startDate: DateTime.now(),
+          endDate: endDateStr != null ? DateTime.tryParse(endDateStr) : null,
+          frequency: frequencyStr == 'custom'
+              ? MedicineFrequency.custom
+              : MedicineFrequency.daily,
+          customDays: customDays,
+        );
+        await DatabaseService.instance.insertMedicine(medicine);
+        try {
+          await NotificationService.instance.scheduleMedicineReminders(medicine);
+        } catch (_) {
+          // Data is saved either way — see the same reasoning as the
+          // Save button fix in medicine_list_screen.dart.
+        }
+      } else if (action.type == 'add_appointment') {
+        final dateTimeStr = action.data['dateTime'] as String?;
+        final dateTime = dateTimeStr != null ? DateTime.tryParse(dateTimeStr) : null;
+        if ((action.data['doctorName'] as String? ?? '').isEmpty || dateTime == null) {
+          throw Exception('Missing doctor name or date/time');
+        }
+
+        final appt = Appointment(
+          id: const Uuid().v4(),
+          doctorName: action.data['doctorName'] as String,
+          location: action.data['location'] as String? ?? '',
+          dateTime: dateTime,
+        );
+        await DatabaseService.instance.insertAppointment(appt);
+        try {
+          await NotificationService.instance.scheduleAppointmentReminder(appt);
+        } catch (_) {}
+      }
+
+      setState(() {
+        message.actionHandled = true;
+        _messages.add(_ChatMessage('✅ Added.', false));
+      });
+    } catch (e) {
+      setState(() {
+        message.actionHandled = true;
+        _messages.add(_ChatMessage(
+            "I couldn't save that — some details seem to be missing. "
+            "You can add it manually instead from My medicines or Appointments.",
+            false));
+      });
+    }
+  }
+
+  void _dismissAction(_ChatMessage message) {
+    setState(() => message.actionHandled = true);
   }
 
   @override
@@ -148,7 +272,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
               itemCount: _messages.length,
               itemBuilder: (context, i) {
                 final m = _messages[i];
-                return Align(
+                final bubble = Align(
                   alignment:
                       m.fromUser ? Alignment.centerRight : Alignment.centerLeft,
                   child: Container(
@@ -168,6 +292,13 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                     ),
                   ),
                 );
+
+                if (m.action == null || m.actionHandled) return bubble;
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [bubble, _actionCard(context, m)],
+                );
               },
             ),
           ),
@@ -177,12 +308,12 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
               child: LinearProgressIndicator(),
             ),
           if (_listening)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
               child: Row(
                 children: [
                   Icon(Icons.mic, color: Colors.redAccent, size: 16),
-                  const SizedBox(width: 6),
+                  SizedBox(width: 6),
                   Text('Listening…',
                       style: TextStyle(color: Colors.redAccent, fontSize: 12)),
                 ],
@@ -227,6 +358,66 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                 ],
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Confirmation card shown under an assistant message that proposes
+  /// adding a medicine or appointment. Nothing is saved until "Confirm"
+  /// is tapped — this is the same safety pattern used for AI-scanned
+  /// prescriptions elsewhere in the app.
+  Widget _actionCard(BuildContext context, _ChatMessage message) {
+    final action = message.action!;
+    final isMedicine = action.type == 'add_medicine';
+
+    final title = isMedicine
+        ? (action.data['name'] as String? ?? 'Medicine')
+        : 'Dr. ${action.data['doctorName'] as String? ?? ''}';
+    final subtitle = isMedicine
+        ? '${action.data['dosage'] ?? ''} • ${((action.data['times'] as List?) ?? []).join(", ")}'
+        : '${action.data['location'] ?? ''} • ${action.data['dateTime'] ?? ''}';
+
+    return Container(
+      margin: const EdgeInsets.only(left: 4, bottom: 10, right: 60),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        border: Border.all(color: Theme.of(context).colorScheme.primary),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(isMedicine ? Icons.medication : Icons.event,
+                  color: Theme.of(context).colorScheme.primary, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  isMedicine ? 'Add medicine?' : 'Add appointment?',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+          Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              TextButton(
+                onPressed: () => _dismissAction(message),
+                child: const Text('Not now'),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton(
+                onPressed: () => _confirmAction(message),
+                child: const Text('Confirm'),
+              ),
+            ],
           ),
         ],
       ),

@@ -145,6 +145,8 @@ class AuthService {
     return profile;
   }
 
+  Future<String?> getToken() => _getToken();
+
   Future<String?> _getToken() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(_tokenKey);

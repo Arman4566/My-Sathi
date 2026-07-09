@@ -105,13 +105,6 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
                   pickedTime!.minute,
                 );
 
-                // If editing, cancel the old reminder first so we don't
-                // end up with two notifications for the same appointment.
-                if (existing != null) {
-                  await NotificationService.instance
-                      .cancelAppointmentReminder(existing);
-                }
-
                 final appt = Appointment(
                   id: existing?.id ?? const Uuid().v4(),
                   doctorName: doctorCtrl.text,
@@ -119,11 +112,38 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
                   dateTime: dateTime,
                 );
 
-                await DatabaseService.instance.insertAppointment(appt);
-                await NotificationService.instance.scheduleAppointmentReminder(appt);
+                // Save the appointment FIRST and unconditionally — reminder
+                // scheduling happens after, so a permission problem there
+                // can never block saving the appointment itself.
+                try {
+                  await DatabaseService.instance.insertAppointment(appt);
+                } catch (e) {
+                  if (ctx.mounted) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                        SnackBar(content: Text('Could not save: $e')));
+                  }
+                  return;
+                }
 
                 if (ctx.mounted) Navigator.pop(ctx);
                 _load();
+
+                try {
+                  if (existing != null) {
+                    await NotificationService.instance
+                        .cancelAppointmentReminder(existing);
+                  }
+                  await NotificationService.instance.scheduleAppointmentReminder(appt);
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                      content: Text(
+                          'Saved, but the reminder could not be scheduled. '
+                          'Check notification/alarm permissions in phone settings.'),
+                      duration: Duration(seconds: 5),
+                    ));
+                  }
+                }
               },
               child: const Text('Save'),
             ),

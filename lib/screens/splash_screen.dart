@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import '../services/auth_service.dart';
+import '../services/cloud_sync_service.dart';
 import 'home_screen.dart';
 import 'login_screen.dart';
 
@@ -23,6 +25,12 @@ class _SplashScreenState extends State<SplashScreen> {
   Future<void> _bootstrap() async {
     final stopwatch = Stopwatch()..start();
     final profile = await AuthService.instance.getCurrentProfile();
+    if (profile != null) {
+      // Non-blocking: keeps app launch fast; the home screen's own
+      // pull-to-refresh (and RefreshIndicator) will pick up anything
+      // this brings down from another device.
+      unawaited(CloudSyncService.instance.pullAllAndMerge());
+    }
 
     const minSplashTime = Duration(milliseconds: 1400);
     final elapsed = stopwatch.elapsed;

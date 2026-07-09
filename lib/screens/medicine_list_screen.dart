@@ -178,21 +178,25 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
                 ),
                 const SizedBox(height: 14),
                 Text('Frequency', style: Theme.of(ctx).textTheme.labelLarge),
-                RadioListTile<MedicineFrequency>(
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  title: const Text('Every day'),
-                  value: MedicineFrequency.daily,
+                RadioGroup<MedicineFrequency>(
                   groupValue: frequency,
                   onChanged: (v) => setStateDialog(() => frequency = v!),
-                ),
-                RadioListTile<MedicineFrequency>(
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  title: const Text('Custom days'),
-                  value: MedicineFrequency.custom,
-                  groupValue: frequency,
-                  onChanged: (v) => setStateDialog(() => frequency = v!),
+                  child: Column(
+                    children: const [
+                      RadioListTile<MedicineFrequency>(
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        title: Text('Every day'),
+                        value: MedicineFrequency.daily,
+                      ),
+                      RadioListTile<MedicineFrequency>(
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        title: Text('Custom days'),
+                        value: MedicineFrequency.custom,
+                      ),
+                    ],
+                  ),
                 ),
                 if (frequency == MedicineFrequency.custom)
                   Wrap(
@@ -258,13 +262,6 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
                   return;
                 }
 
-                // If editing, cancel old reminders first to avoid duplicates
-                // when times/frequency changed.
-                if (existing != null) {
-                  await NotificationService.instance
-                      .cancelMedicineReminders(existing);
-                }
-
                 final medicine = Medicine(
                   id: existing?.id ?? const Uuid().v4(),
                   name: nameCtrl.text.trim(),
@@ -281,16 +278,48 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
                   photoPath: photoPath,
                 );
 
-                if (existing != null) {
-                  await DatabaseService.instance.updateMedicine(medicine);
-                } else {
-                  await DatabaseService.instance.insertMedicine(medicine);
+                // Save the medicine itself FIRST and unconditionally. Reminder
+                // scheduling is handled separately below so that a permission
+                // problem or other notification error can never block saving
+                // your data or leave the dialog stuck open with no feedback.
+                try {
+                  if (existing != null) {
+                    await DatabaseService.instance.updateMedicine(medicine);
+                  } else {
+                    await DatabaseService.instance.insertMedicine(medicine);
+                  }
+                } catch (e) {
+                  if (ctx.mounted) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                        SnackBar(content: Text('Could not save: $e')));
+                  }
+                  return; // don't close the dialog if the save itself failed
                 }
-                await NotificationService.instance
-                    .scheduleMedicineReminders(medicine);
 
                 if (ctx.mounted) Navigator.pop(ctx);
                 _load();
+
+                // Reminder scheduling happens after the dialog closes, so a
+                // failure here (e.g. exact-alarm permission not granted)
+                // only shows a warning — it never prevents the medicine
+                // itself from being saved.
+                try {
+                  if (existing != null) {
+                    await NotificationService.instance
+                        .cancelMedicineReminders(existing);
+                  }
+                  await NotificationService.instance
+                      .scheduleMedicineReminders(medicine);
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text(
+                          'Saved, but reminders could not be scheduled. '
+                          'Check notification/alarm permissions in phone settings.'),
+                      duration: const Duration(seconds: 5),
+                    ));
+                  }
+                }
               },
               child: const Text('Save'),
             ),

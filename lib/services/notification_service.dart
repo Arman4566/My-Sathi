@@ -47,11 +47,24 @@ class NotificationService {
 
     await _plugin.initialize(initSettings);
 
+    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+
     // Android 13+ requires runtime notification permission.
-    await _plugin
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
-        ?.requestNotificationsPermission();
+    await androidPlugin?.requestNotificationsPermission();
+
+    // Android 12+ requires this SEPARATE permission for exact-time alarms
+    // (AndroidScheduleMode.alarmClock, used below). Without it, scheduling
+    // throws and — before this fix — silently broke the Save button, since
+    // nothing caught the error. MIUI/Redmi and several other OEMs are
+    // stricter about this than stock Android, so this matters a lot on
+    // those devices in particular.
+    try {
+      await androidPlugin?.requestExactAlarmsPermission();
+    } catch (_) {
+      // Older flutter_local_notifications versions or older Android
+      // versions may not support/need this call — safe to ignore.
+    }
   }
 
   /// Schedules reminders for a medicine according to its frequency.

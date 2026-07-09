@@ -150,21 +150,25 @@ class _ScanPrescriptionScreenState extends State<ScanPrescriptionScreen> {
                 ),
                 const SizedBox(height: 14),
                 Text('Frequency', style: Theme.of(ctx).textTheme.labelLarge),
-                RadioListTile<MedicineFrequency>(
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  title: const Text('Every day'),
-                  value: MedicineFrequency.daily,
+                RadioGroup<MedicineFrequency>(
                   groupValue: frequency,
                   onChanged: (v) => setStateDialog(() => frequency = v!),
-                ),
-                RadioListTile<MedicineFrequency>(
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  title: const Text('Custom days'),
-                  value: MedicineFrequency.custom,
-                  groupValue: frequency,
-                  onChanged: (v) => setStateDialog(() => frequency = v!),
+                  child: Column(
+                    children: const [
+                      RadioListTile<MedicineFrequency>(
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        title: Text('Every day'),
+                        value: MedicineFrequency.daily,
+                      ),
+                      RadioListTile<MedicineFrequency>(
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        title: Text('Custom days'),
+                        value: MedicineFrequency.custom,
+                      ),
+                    ],
+                  ),
                 ),
                 if (frequency == MedicineFrequency.custom)
                   Wrap(
@@ -241,38 +245,64 @@ class _ScanPrescriptionScreenState extends State<ScanPrescriptionScreen> {
   Future<void> _confirmAndSave() async {
     if (_image == null) return;
     final prescriptionId = const Uuid().v4();
+    var reminderFailures = 0;
 
-    await DatabaseService.instance.insertPrescription(Prescription(
-      id: prescriptionId,
-      imagePath: _image!.path,
-      rawText: _rawText,
-      doctorName: '',
-      dateAdded: DateTime.now(),
-    ));
+    try {
+      await DatabaseService.instance.insertPrescription(Prescription(
+        id: prescriptionId,
+        imagePath: _image!.path,
+        rawText: _rawText,
+        doctorName: '',
+        dateAdded: DateTime.now(),
+      ));
 
-    for (final s in _suggestions) {
-      if (s.name.trim().isEmpty || s.times.isEmpty) continue;
+      for (final s in _suggestions) {
+        if (s.name.trim().isEmpty || s.times.isEmpty) continue;
 
-      final medicine = Medicine(
-        id: const Uuid().v4(),
-        name: s.name,
-        dosage: s.dosage,
-        instructions: s.instructions,
-        times: s.times
-            .map((t) =>
-                '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}')
-            .toList(),
-        startDate: DateTime.now(),
-        endDate: s.endDate,
-        prescriptionId: prescriptionId,
-        frequency: s.frequency,
-        customDays: s.customDays.toList()..sort(),
-      );
-      await DatabaseService.instance.insertMedicine(medicine);
-      await NotificationService.instance.scheduleMedicineReminders(medicine);
+        final medicine = Medicine(
+          id: const Uuid().v4(),
+          name: s.name,
+          dosage: s.dosage,
+          instructions: s.instructions,
+          times: s.times
+              .map((t) =>
+                  '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}')
+              .toList(),
+          startDate: DateTime.now(),
+          endDate: s.endDate,
+          prescriptionId: prescriptionId,
+          frequency: s.frequency,
+          customDays: s.customDays.toList()..sort(),
+        );
+        // Save the medicine unconditionally; a reminder-scheduling
+        // failure for one medicine shouldn't stop the rest from saving
+        // or leave the screen stuck.
+        await DatabaseService.instance.insertMedicine(medicine);
+        try {
+          await NotificationService.instance.scheduleMedicineReminders(medicine);
+        } catch (_) {
+          reminderFailures++;
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Could not save: $e')));
+      }
+      return;
     }
 
-    if (mounted) Navigator.pop(context);
+    if (mounted) {
+      if (reminderFailures > 0) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+              'Saved, but $reminderFailures reminder(s) could not be scheduled. '
+              'Check notification/alarm permissions in phone settings.'),
+          duration: const Duration(seconds: 5),
+        ));
+      }
+      Navigator.pop(context);
+    }
   }
 
   @override

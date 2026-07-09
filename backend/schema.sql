@@ -31,13 +31,22 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
   used BOOLEAN DEFAULT false
 );
 
--- WORKED EXAMPLE for syncing app data to the cloud (medicines shown
--- here; the app doesn't call this yet — see medicines.js and the README
--- section "What's cloud-synced vs. what's still local" for the current
--- boundary and how to extend this to appointments/reports/health_records
--- using the same pattern).
+-- Cloud sync tables for all of the app's data. Same pattern throughout:
+-- id + user_id + the same fields as the local SQLite tables, snake_cased.
+-- See cloud_sync_service.dart for how the Flutter app pushes to and
+-- pulls from these.
+--
+-- IMPORTANT LIMITATION: imagePath/filePath/photoPath columns store
+-- whatever local device file path the app had at the time (e.g. a
+-- prescription photo's cache path). That path is meaningless on a
+-- different phone — only the other fields (name, text, OCR text, AI
+-- summary, etc.) actually sync usefully across devices right now. Making
+-- photos themselves available on every device would need real cloud file
+-- storage (e.g. Supabase Storage/S3) in addition to this database — a
+-- separate, larger piece of work from what's here.
+
 CREATE TABLE IF NOT EXISTS medicines (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id UUID PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   dosage TEXT,
@@ -50,5 +59,49 @@ CREATE TABLE IF NOT EXISTS medicines (
   active BOOLEAN DEFAULT true,
   photo_path TEXT,
   prescribed_by TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS appointments (
+  id UUID PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  doctor_name TEXT,
+  location TEXT,
+  date_time TIMESTAMPTZ,
+  notes TEXT DEFAULT '',
+  reminder_set BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS prescriptions (
+  id UUID PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  image_path TEXT,
+  raw_text TEXT,
+  doctor_name TEXT,
+  date_added TIMESTAMPTZ,
+  notes TEXT DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS medical_reports (
+  id UUID PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title TEXT,
+  file_path TEXT,
+  raw_text TEXT,
+  summary TEXT,
+  uploaded_date TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS health_records (
+  id UUID PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  date TIMESTAMPTZ,
+  weight_kg REAL,
+  blood_pressure TEXT,
+  sugar_level REAL,
+  notes TEXT DEFAULT '',
   created_at TIMESTAMPTZ DEFAULT now()
 );

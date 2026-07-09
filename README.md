@@ -37,24 +37,24 @@ patient_care_app/
 
 ## What's cloud-synced vs. what's still local — read this first
 
-This app now has **two different storage layers**, and it matters which
-your data is in:
+All app data now syncs to the cloud (Postgres, via the backend):
+account info, medicines, appointments, scanned prescriptions/reports, and
+health log entries. Logging in on a new device pulls all of it down
+automatically; every add/edit/delete pushes up in the background.
 
-- **Cloud (Postgres, via the backend)**: your **account** — email,
-  password (hashed), name, age, weight, height, gender, bio, avatar. This
-  is what makes login "from anywhere" and forgot-password work, since the
-  account isn't tied to one phone's local database anymore.
-- **Local only (SQLite on the device)**: medicines, appointments, scanned
-  prescriptions/reports, and health log entries. These still live only on
-  the phone that created them — switching phones or reinstalling loses
-  them, same as before.
+**One real limitation**: photo/image fields (a medicine's photo, a
+prescription/report's scanned image) are stored as **local device file
+paths**, not uploaded anywhere. That path means nothing on a different
+phone, so photos themselves don't follow you across devices — only the
+text/data around them does (name, dosage, OCR'd text, AI summary, etc.).
+Making photos available everywhere would need real cloud file storage
+(e.g. Supabase Storage or S3) in addition to this database — a separate
+piece of work from what's here. See the comment in `schema.sql` and
+`cloud_sync_service.dart` for where to extend this if you want it.
 
-`backend/medicines.js` is a complete **worked example** of the cloud-sync
-pattern (same idea as `auth.js`, scoped per user) — the Flutter app just
-isn't calling it yet. Extending appointments/reports/health-log to the
-cloud the same way is a very doable next step, but a distinct piece of
-work from what's here, so I've kept it clearly separated rather than
-quietly gluing it on. Ask if you want that built next.
+Sync failures (offline, backend not deployed yet) never block the app —
+local writes always succeed first; the cloud push happens in the
+background and is simply skipped if it can't reach the backend that time.
 
 ## ⚠️ Before the chatbot or AI-powered features will work
 
@@ -78,6 +78,10 @@ which lives in `backend/server.js` — never inside the app. Until deployed:
      the contents of `backend/schema.sql` and run it. (Or use `psql
      "<your connection string>" -f backend/schema.sql` from a terminal if
      you have `psql` installed.)
+   - Already deployed this backend before? `schema.sql` is safe to
+     re-run — it only creates tables that don't exist yet, so re-running
+     it after an update just adds any new tables without touching your
+     existing data.
 4. Put the `backend/` folder in its own GitHub repo (or a subfolder of an
    existing one).
 5. Go to render.com → New → **Web Service** → connect that repo.
@@ -123,9 +127,9 @@ A branded loading screen shown while the app initializes (auth check,
 notification setup) — see `splash_screen.dart`.
 
 ### Profile
-WhatsApp-style layout: avatar (tap the camera badge to change it), an
-"About" status line, and tap-to-edit rows for name/age/weight/height/
-gender, with an auto-calculated BMI. Saved to your cloud account.
+WhatsApp-style layout: avatar (tap the camera badge to change it), and
+tap-to-edit rows for name/age/weight/height/gender, with an
+auto-calculated BMI. Saved to your cloud account.
 
 ### Reports, with AI summaries
 Upload any medical document (lab report, scan, etc.) via **Reports →
@@ -167,6 +171,18 @@ prescription" moved into the quick-actions grid.
 ### Voice input
 The chatbot has a microphone button (uses `speech_to_text`) — tap to
 dictate instead of typing.
+
+### A chatbot that knows your data — and can act on it (with confirmation)
+Every message now includes your current medicines, appointments, recent
+report summaries, and profile as context, so you can ask things like
+"what am I currently taking" or "when's my next appointment" and get a
+real answer. You can also ask it to add a medicine or appointment — if
+you've given enough detail (name + dose + time for a medicine; doctor +
+date/time for an appointment), it proposes the exact details as a card in
+the chat. **Nothing is ever saved until you tap Confirm** — same
+"AI suggests, you decide" pattern used for prescription scanning
+elsewhere in the app. If details are missing, it asks instead of
+guessing.
 
 ## Step-by-step setup
 
@@ -212,9 +228,9 @@ summaries, the chatbot, and now also login/signup/password reset.
 
 ## Feature ideas worth adding next
 
-- **Sync medicines/appointments/reports/health-log to the cloud** using
-  the same pattern as `medicines.js` — the natural next step given the
-  boundary described above.
+- **Cloud photo/file storage** (Supabase Storage/S3) so medicine photos
+  and scanned prescription/report images follow you across devices too —
+  the one piece full sync doesn't cover yet (see the limitation above).
 - **Adherence tracking**: "Taken"/"Skipped" actions on the notification
   itself, plus a weekly adherence % for doctor visits.
 - **Literal ringing alarms** via the `alarm` package, if full-screen
@@ -226,11 +242,14 @@ summaries, the chatbot, and now also login/signup/password reset.
 
 ## A note on health and account data
 
-Account info (email, hashed password, profile fields) lives in your cloud
-Postgres database. Medicines, appointments, reports, and health-log
-entries still live only in local SQLite on the device (see the boundary
-section above). OCR text sent for AI parsing/summaries and chat messages
-go to your backend only. If you extend cloud sync to the rest of the
-data, treat all of it as health data: encrypt in transit and at rest, and
-check applicable regulations (HIPAA in the US, GDPR in the EU, etc.)
-before launching to real users.
+Account info, medicines, appointments, reports, and health-log entries
+now all live in your cloud Postgres database (with a local SQLite copy
+for offline use). This is genuinely health data now living outside the
+device — encrypt in transit and at rest (Neon/Supabase do this by
+default for data at rest; the app talks to your backend over HTTPS once
+deployed), and check applicable regulations (HIPAA in the US, GDPR in the
+EU, etc.) before launching to real users. OCR text sent for AI
+parsing/summaries and chat messages (including your medicines,
+appointments, and report summaries as context) go to your backend and
+from there to Google's Gemini API — review Google's API data-handling
+terms if that matters for your use case.

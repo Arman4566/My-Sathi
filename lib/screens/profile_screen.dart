@@ -172,16 +172,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
           _infoRow(
-            icon: Icons.info_outline,
-            label: 'About',
-            value: p.bio.isNotEmpty ? p.bio : 'Add a short status',
-            onTap: () => _editField(
-              label: 'about',
-              currentValue: p.bio,
-              onSave: (v) => _saveProfile(p.copyWith(bio: v)),
-            ),
-          ),
-          _infoRow(
             icon: Icons.email_outlined,
             label: 'Email',
             value: p.email,

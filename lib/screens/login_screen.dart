@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
+import '../services/cloud_sync_service.dart';
 import 'signup_screen.dart';
 import 'forgot_password_screen.dart';
 import 'home_screen.dart';
@@ -26,6 +27,11 @@ class _LoginScreenState extends State<LoginScreen> {
         email: _emailCtrl.text.trim(),
         password: _passwordCtrl.text,
       );
+      // Bring this device's local data in line with the account's cloud
+      // data — matters most here, on a device that's never logged in
+      // before. Awaited (not fire-and-forget) so Home shows real data on
+      // first paint instead of an empty state.
+      await CloudSyncService.instance.pullAllAndMerge();
       if (mounted) {
         Navigator.pushAndRemoveUntil(
           context,
