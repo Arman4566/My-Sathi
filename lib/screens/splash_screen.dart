@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import '../models/user_profile.dart';
 import '../services/auth_service.dart';
 import '../services/cloud_sync_service.dart';
 import 'home_screen.dart';
@@ -24,12 +25,21 @@ class _SplashScreenState extends State<SplashScreen> {
 
   Future<void> _bootstrap() async {
     final stopwatch = Stopwatch()..start();
-    final profile = await AuthService.instance.getCurrentProfile();
-    if (profile != null) {
-      // Non-blocking: keeps app launch fast; the home screen's own
-      // pull-to-refresh (and RefreshIndicator) will pick up anything
-      // this brings down from another device.
-      unawaited(CloudSyncService.instance.pullAllAndMerge());
+
+    // If this throws for any reason (e.g. corrupted local storage), fall
+    // back to treating the user as logged out rather than crashing before
+    // any screen has rendered — worst case they just need to log in again.
+    UserProfile? profile;
+    try {
+      profile = await AuthService.instance.getCurrentProfile();
+      if (profile != null) {
+        // Non-blocking: keeps app launch fast; the home screen's own
+        // pull-to-refresh (and RefreshIndicator) will pick up anything
+        // this brings down from another device.
+        unawaited(CloudSyncService.instance.pullAllAndMerge());
+      }
+    } catch (e) {
+      debugPrint('Session check failed, defaulting to logged out: $e');
     }
 
     const minSplashTime = Duration(milliseconds: 1400);

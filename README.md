@@ -212,6 +212,26 @@ enabled for `flutter_local_notifications` in
 `android/app/build.gradle(.kts)` (see comments there if you hit a build
 error mentioning it). Minimum SDK: 21+.
 
+**If you build a release APK to share with others** (`flutter build apk
+--release`) and R8/ProGuard minification is enabled in your
+`build.gradle(.kts)` (`isMinifyEnabled = true`), add an
+`android/app/proguard-rules.pro` with at least:
+```proguard
+-keep class io.flutter.plugins.sqflite.** { *; }
+-keep class com.dexterous.** { *; }
+-keep class com.baseflow.** { *; }
+```
+Code shrinking can strip classes that `sqflite`, `flutter_local_notifications`,
+and `speech_to_text` reach via reflection, which is one of the most common
+causes of "runs fine via `flutter run` on my phone, but the shared APK
+installs and then won't open on someone else's phone."
+
+**If a shared/installed release build still won't open elsewhere**, the
+single most useful thing to do is get the actual crash log rather than
+guess further: connect that phone via USB (enable USB debugging), then
+run `flutter run --release` targeting it from your dev machine — the
+terminal will show the real exception and stack trace.
+
 ### 4. iOS setup notes
 `Info.plist` needs `NSCameraUsageDescription`,
 `NSPhotoLibraryUsageDescription`, and `NSMicrophoneUsageDescription` (for

@@ -31,7 +31,7 @@ class DatabaseService {
 
     return openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE medicines (
@@ -46,7 +46,8 @@ class DatabaseService {
             active INTEGER,
             frequency TEXT,
             customDays TEXT,
-            photoPath TEXT
+            photoPath TEXT,
+            prescribedBy TEXT
           )
         ''');
         await db.execute('''
@@ -79,7 +80,8 @@ class DatabaseService {
             weightKg REAL,
             heightCm REAL,
             gender TEXT,
-            photoPath TEXT
+            photoPath TEXT,
+            bio TEXT
           )
         ''');
         await db.execute('''
@@ -149,6 +151,16 @@ class DatabaseService {
               uploadedDate TEXT
             )
           ''');
+        }
+        if (oldVersion < 4) {
+          // prescribedBy (doctor name shown in medicine reminder alarms)
+          // and profiles.bio were added to the app's models without a
+          // matching migration at the time — this is that missing step,
+          // for anyone who already has a version-3 database on their
+          // device. New installs get these columns directly via
+          // onCreate above, so this only runs on upgrades.
+          await db.execute('ALTER TABLE medicines ADD COLUMN prescribedBy TEXT');
+          await db.execute('ALTER TABLE profiles ADD COLUMN bio TEXT');
         }
       },
     );

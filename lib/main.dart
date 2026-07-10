@@ -6,10 +6,26 @@ import 'screens/splash_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await NotificationService.instance.init();
+
+  // CRITICAL: notification setup varies a lot across Android versions and
+  // manufacturers (we've already hit two separate permission-related
+  // crashes here on just one test device). If this throws on some other
+  // phone and isn't caught, the app dies before any screen ever renders —
+  // "installs but won't open," with no error visible to the user. Worst
+  // case if this fails: reminders may not work on that device, but the
+  // app itself must always be able to open.
+  try {
+    await NotificationService.instance.init();
+  } catch (e) {
+    debugPrint('Notification init failed (app will still open): $e');
+  }
 
   final settings = SettingsService();
-  await settings.load();
+  try {
+    await settings.load();
+  } catch (e) {
+    debugPrint('Settings load failed, using defaults: $e');
+  }
 
   runApp(
     ChangeNotifierProvider.value(

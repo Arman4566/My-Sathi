@@ -41,7 +41,7 @@ class AiBackendService {
   // Replace with your deployed backend URL. Shared by auth_service.dart
   // and cloud_sync_service.dart too, so there's only one place to update
   // after deploying.
-  static const String baseUrl = 'https://YOUR-BACKEND-URL.example.com';
+  static const String baseUrl = 'https://my-sathi-2.onrender.com';
   static const String _baseUrl = baseUrl;
 
   Future<List<ParsedMedicineSuggestion>> parsePrescriptionText(
