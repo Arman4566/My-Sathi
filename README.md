@@ -212,6 +212,37 @@ enabled for `flutter_local_notifications` in
 `android/app/build.gradle(.kts)` (see comments there if you hit a build
 error mentioning it). Minimum SDK: 21+.
 
+**"Inconsistent JVM-target compatibility" build errors** (e.g.
+`compileDebugJavaWithJavac (11) and compileDebugKotlin (1.8)`) — this
+project has hit this a few times now as new plugins get added
+(`flutter_local_notifications`, `flutter_timezone`, ...), because each
+plugin's own Gradle module can pick a different default Java/Kotlin
+target than your app module, even after you've fixed it in
+`android/app/build.gradle.kts`. Instead of patching this per-plugin every
+time a new one triggers it, fix it once at the **root** level: open
+`android/build.gradle.kts` (not `app/build.gradle.kts`) and add this at
+the end of the file:
+```kotlin
+subprojects {
+    afterEvaluate {
+        extensions.findByType<com.android.build.gradle.BaseExtension>()?.apply {
+            compileOptions {
+                sourceCompatibility = JavaVersion.VERSION_1_8
+                targetCompatibility = JavaVersion.VERSION_1_8
+            }
+        }
+        tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+            compilerOptions {
+                jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_1_8)
+            }
+        }
+    }
+}
+```
+This forces every module — your app AND every plugin — to compile
+Java/Kotlin to the same target, so this class of error stops recurring
+each time a new plugin is added. Run `flutter clean` after adding it.
+
 **If you build a release APK to share with others** (`flutter build apk
 --release`) and R8/ProGuard minification is enabled in your
 `build.gradle(.kts)` (`isMinifyEnabled = true`), add an

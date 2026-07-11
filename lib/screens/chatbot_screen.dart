@@ -154,9 +154,14 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
       setState(() => _messages
           .add(_ChatMessage(response.reply, false, action: response.action)));
     } catch (e) {
+      final detail = e.toString().replaceFirst('Exception: ', '');
+      final isKnownMessage = detail.isNotEmpty && !detail.contains('SocketException') &&
+          !detail.startsWith('Chat request failed');
       setState(() => _messages.add(_ChatMessage(
-          "Sorry, I couldn't reach the assistant right now. If this is "
-          "urgent, please contact your doctor or pharmacist directly.",
+          isKnownMessage
+              ? detail
+              : "Sorry, I couldn't reach the assistant right now. If this is "
+                  "urgent, please contact your doctor or pharmacist directly.",
           false)));
     } finally {
       setState(() => _sending = false);

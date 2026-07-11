@@ -44,6 +44,18 @@ class AiBackendService {
   static const String baseUrl = 'https://my-sathi-2.onrender.com';
   static const String _baseUrl = baseUrl;
 
+  /// Backend error responses may include a friendlier `message` (e.g. for
+  /// a Gemini overload: "The AI service is busy right now..."). Falls
+  /// back to a generic message if the body isn't JSON or doesn't have one.
+  String _extractErrorMessage(http.Response res, String fallback) {
+    try {
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      return (data['message'] as String?) ?? fallback;
+    } catch (_) {
+      return fallback;
+    }
+  }
+
   Future<List<ParsedMedicineSuggestion>> parsePrescriptionText(
       String rawText) async {
     final res = await http.post(
@@ -53,7 +65,8 @@ class AiBackendService {
     );
 
     if (res.statusCode != 200) {
-      throw Exception('Failed to parse prescription: ${res.statusCode}');
+      throw Exception(_extractErrorMessage(
+          res, 'Failed to parse prescription: ${res.statusCode}'));
     }
 
     final data = jsonDecode(res.body) as Map<String, dynamic>;
@@ -92,7 +105,8 @@ class AiBackendService {
     );
 
     if (res.statusCode != 200) {
-      throw Exception('Chat request failed: ${res.statusCode}');
+      throw Exception(
+          _extractErrorMessage(res, 'Chat request failed: ${res.statusCode}'));
     }
 
     final data = jsonDecode(res.body) as Map<String, dynamic>;
@@ -116,7 +130,8 @@ class AiBackendService {
     );
 
     if (res.statusCode != 200) {
-      throw Exception('Summary request failed: ${res.statusCode}');
+      throw Exception(_extractErrorMessage(
+          res, 'Summary request failed: ${res.statusCode}'));
     }
 
     final data = jsonDecode(res.body) as Map<String, dynamic>;

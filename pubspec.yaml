@@ -22,6 +22,7 @@ dependencies:
   # Notifications & scheduling
   flutter_local_notifications: ^17.2.2
   timezone: ^0.9.4
+  flutter_timezone: ^3.0.1
 
   # Prescription photo capture + on-device OCR
   image_picker: ^1.1.2

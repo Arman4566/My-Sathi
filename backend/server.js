@@ -28,6 +28,48 @@ app.use('/api/health-records', healthRecordsRouter);
 // Automatically initializes using process.env.GEMINI_API_KEY
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
+// Gemini occasionally returns 503 "currently experiencing high demand" —
+// this is Google's servers being temporarily overloaded, not a bug here.
+// Retry a couple of times with backoff, then fall back to an older model
+// (which is sometimes less congested) before finally giving up.
+const FALLBACK_MODEL = 'gemini-2.5-flash';
+
+function isOverloadedError(err) {
+  return (
+    err?.status === 503 ||
+    err?.error?.code === 503 ||
+    /UNAVAILABLE|high demand|overloaded/i.test(err?.message || '')
+  );
+}
+
+async function generateWithRetry(config, { retries = 2 } = {}) {
+  let lastErr;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await ai.models.generateContent(config);
+    } catch (err) {
+      lastErr = err;
+      if (!isOverloadedError(err) || attempt === retries) break;
+      const delayMs = 1000 * 2 ** attempt; // 1s, 2s, 4s...
+      console.warn(
+        `Gemini overloaded (attempt ${attempt + 1}/${retries + 1}), retrying in ${delayMs}ms...`
+      );
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+
+  if (isOverloadedError(lastErr) && config.model !== FALLBACK_MODEL) {
+    console.warn(`Still overloaded after retries — falling back to ${FALLBACK_MODEL}`);
+    try {
+      return await ai.models.generateContent({ ...config, model: FALLBACK_MODEL });
+    } catch (fallbackErr) {
+      lastErr = fallbackErr;
+    }
+  }
+
+  throw lastErr;
+}
+
 // ---------------------------------------------------------------------
 // 1) Prescription text -> structured medicine suggestions
 // ---------------------------------------------------------------------
@@ -35,7 +77,7 @@ app.post('/api/parse-prescription', async (req, res) => {
   try {
     const { rawText } = req.body;
 
-    const response = await ai.models.generateContent({
+    const response = await generateWithRetry({
       model: 'gemini-3.5-flash',
       contents: `You extract medicine details from raw OCR text of a doctor's
 prescription. The OCR text may be messy, misspelled, or incomplete because
@@ -55,6 +97,12 @@ referenced in the text. Here is the raw text to parse: \n\n${rawText}`,
     res.json(parsed);
   } catch (err) {
     console.error(err);
+    if (isOverloadedError(err)) {
+      return res.status(503).json({
+        error: 'ai_overloaded',
+        message: 'The AI service is busy right now. Please try again in a moment.',
+      });
+    }
     res.status(500).json({ error: 'parse_failed' });
   }
 });
@@ -161,7 +209,7 @@ app.post('/api/chat', async (req, res) => {
     // for it to propose sensible dateTime/endDate values.
     contextParts.push(`Today's date is ${new Date().toISOString().slice(0, 10)}.`);
 
-    const response = await ai.models.generateContent({
+    const response = await generateWithRetry({
       model: 'gemini-3.5-flash',
       contents: message,
       config: {
@@ -170,11 +218,30 @@ app.post('/api/chat', async (req, res) => {
       }
     });
 
-    const parsed = JSON.parse(response.text);
-    res.json({ reply: parsed.reply, action: parsed.action ?? null });
+    const rawText = response.text;
+    let parsed;
+    try {
+      const cleaned = rawText.replace(/```json|```/g, '').trim();
+      parsed = JSON.parse(cleaned);
+    } catch (parseErr) {
+      // The model occasionally drifts from strict JSON despite
+      // responseMimeType. Rather than fail the whole request, fall back
+      // to showing the raw text as a plain reply with no action — a
+      // degraded response beats a dead chatbot.
+      console.error('Chat JSON parse failed, raw model output:', rawText);
+      parsed = { reply: rawText, action: null };
+    }
+
+    res.json({ reply: parsed.reply ?? rawText, action: parsed.action ?? null });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'chat_failed' });
+    console.error('Chat request failed:', err);
+    if (isOverloadedError(err)) {
+      return res.status(503).json({
+        error: 'ai_overloaded',
+        message: 'The AI service is busy right now. Please try again in a moment.',
+      });
+    }
+    res.status(500).json({ error: 'chat_failed', message: err.message });
   }
 });
 
@@ -203,7 +270,7 @@ app.post('/api/summarize-report', async (req, res) => {
       return res.status(400).json({ error: 'no_text' });
     }
 
-    const response = await ai.models.generateContent({
+    const response = await generateWithRetry({
       model: 'gemini-3.5-flash',
       contents: rawText,
       config: {
@@ -214,6 +281,12 @@ app.post('/api/summarize-report', async (req, res) => {
     res.json({ summary: response.text });
   } catch (err) {
     console.error(err);
+    if (isOverloadedError(err)) {
+      return res.status(503).json({
+        error: 'ai_overloaded',
+        message: 'The AI service is busy right now. Please try again in a moment.',
+      });
+    }
     res.status(500).json({ error: 'summarize_failed' });
   }
 });

@@ -1,6 +1,8 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest_all.dart' as tz_data;
+import 'package:flutter_timezone/flutter_timezone.dart';
 import '../models/medicine.dart';
 import '../models/appointment.dart';
 
@@ -33,8 +35,23 @@ class NotificationService {
 
   Future<void> init() async {
     tz_data.initializeTimeZones();
-    // If you need the DEVICE's real timezone (not just UTC), pair this with
-    // the `flutter_timezone` package to call tz.setLocalLocation(...).
+
+    // CRITICAL: without this, tz.local defaults to UTC, and every
+    // scheduled reminder below is computed against UTC instead of the
+    // device's actual local time — e.g. a "9:00 AM" reminder in India
+    // (UTC+5:30) would actually fire at 2:30 PM local time, every single
+    // day. This was previously left as a README suggestion and never
+    // wired into code — that gap alone can make reminders look totally
+    // broken even though scheduling "succeeds" with no error.
+    try {
+      final deviceTimeZone = await FlutterTimezone.getLocalTimezone();
+      tz.setLocalLocation(tz.getLocation(deviceTimeZone));
+    } catch (e) {
+      // Fall back to UTC rather than crash if the platform can't report
+      // a timezone for some reason — reminders would still work, just
+      // potentially at the wrong local time until this is investigated.
+      debugPrint('Could not determine device timezone, defaulting to UTC: $e');
+    }
 
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
     const iosInit = DarwinInitializationSettings(
