@@ -56,69 +56,7 @@ Sync failures (offline, backend not deployed yet) never block the app —
 local writes always succeed first; the cloud push happens in the
 background and is simply skipped if it can't reach the backend that time.
 
-## ⚠️ Before the chatbot or AI-powered features will work
 
-Prescription/report scanning and the chatbot need an LLM (Google Gemini),
-which lives in `backend/server.js` — never inside the app. Until deployed:
-- The chatbot replies "Sorry, I couldn't reach the assistant..."
-- Report summaries fail to generate
-- Prescription scanning falls back to a rough on-device keyword parser
-
-### Deploy the backend (Render.com — free tier)
-
-1. Get a Gemini API key from **aistudio.google.com** (or Google Cloud
-   Console). If you ever pasted a key into a chat, screenshot, or public
-   repo, delete it there and generate a fresh one — treat any exposed key
-   as compromised.
-2. Set up a free Postgres database — **Neon** (neon.tech) or **Supabase**
-   (supabase.com) both work well. Copy the connection string they give
-   you (it looks like `postgresql://user:pass@host/db?sslmode=require`).
-3. Run the schema once against that database:
-   - Neon/Supabase both have a SQL editor in their dashboard — paste in
-     the contents of `backend/schema.sql` and run it. (Or use `psql
-     "<your connection string>" -f backend/schema.sql` from a terminal if
-     you have `psql` installed.)
-   - Already deployed this backend before? `schema.sql` is safe to
-     re-run — it only creates tables that don't exist yet, so re-running
-     it after an update just adds any new tables without touching your
-     existing data.
-4. Put the `backend/` folder in its own GitHub repo (or a subfolder of an
-   existing one).
-5. Go to render.com → New → **Web Service** → connect that repo.
-   - Root directory: `backend`
-   - Build command: `npm install`
-   - Start command: `npm start`
-6. Under **Environment**, add:
-   - `GEMINI_API_KEY` = your key
-   - `DATABASE_URL` = your Postgres connection string
-   - `JWT_SECRET` = a long random string (generate one with
-     `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`)
-   - `EMAIL_USER` / `EMAIL_PASS` = optional, for forgot-password emails to
-     actually send (see below) — leave blank during testing; reset codes
-     will just print to Render's logs instead.
-7. Deploy. Render gives you a URL like `https://sathi-backend.onrender.com`.
-8. Open `lib/services/ai_backend_service.dart` and replace:
-   ```dart
-   static const String baseUrl = 'https://sathi-backend.onrender.com';
-   ```
-   (`auth_service.dart` reuses this same URL automatically.)
-9. `flutter run` again.
-
-(Free-tier Render services "sleep" after inactivity — the first request
-after a while can take 20–30 seconds. Normal, not a bug.)
-
-### Setting up forgot-password emails (optional but recommended)
-
-Without `EMAIL_USER`/`EMAIL_PASS` set, reset codes just print to your
-Render logs — fine for testing, useless for real users. To send actual
-emails:
-- **Easiest**: use a Gmail account with an **App Password** (not your
-  normal password) — see support.google.com/accounts/answer/185833.
-  Set `EMAIL_USER` to that Gmail address and `EMAIL_PASS` to the app
-  password.
-- **More scalable**: swap the `nodemailer` Gmail transport in `auth.js`
-  for a transactional email API like Resend or SendGrid — better
-  deliverability at real-world volume, small code change.
 
 ## New features in this version
 
