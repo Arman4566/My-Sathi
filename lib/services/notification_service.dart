@@ -240,6 +240,47 @@ class NotificationService {
     await _plugin.cancel(_idFor(appt.id, 'appt'));
   }
 
+  /// Fires an IMMEDIATE notification (no scheduling involved). If this
+  /// doesn't appear, the problem is permissions/OS-level (notifications
+  /// blocked for the app), not anything about how reminders are
+  /// scheduled — check Settings > Apps > Sathi > Notifications.
+  Future<void> sendTestNotificationNow() async {
+    await _plugin.show(
+      999001,
+      'Test notification',
+      'If you can see this, notification display works on this phone.',
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'medicine_reminders',
+          'Medicine Reminders',
+          channelDescription: 'Reminders to take scheduled medicine',
+          importance: Importance.max,
+          priority: Priority.high,
+        ),
+        iOS: DarwinNotificationDetails(),
+      ),
+    );
+  }
+
+  /// Schedules a real alarm-style notification a short time in the
+  /// future, using the exact same code path as medicine reminders. If
+  /// the immediate test above works but this one never fires, the
+  /// problem is specifically about scheduled/background delivery (OEM
+  /// battery restrictions, exact-alarm permission, etc.) rather than
+  /// notifications being blocked outright.
+  Future<void> sendTestReminderIn(Duration delay) async {
+    final scheduledDate = tz.TZDateTime.now(tz.local).add(delay);
+    await _scheduleOne(
+      id: 999002,
+      title: 'Test reminder',
+      body: 'Scheduled ${delay.inSeconds}s ago — if you see this, scheduled '
+          'alarms work on this phone.',
+      scheduledDate: scheduledDate,
+      matchComponents: null,
+      payload: 'test',
+    );
+  }
+
   int _idFor(String entityId, String suffix) =>
       (entityId + suffix).hashCode & 0x7fffffff;
 
