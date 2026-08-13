@@ -120,7 +120,6 @@ Sync failures (offline, backend not deployed yet) never block the app —
 local writes always succeed first; the cloud push happens in the
 background and is simply skipped if it can't reach the backend that time.
 
-## ⚠️ Before the chatbot or AI-powered features will work
 
 Prescription/report scanning and the chatbot need an LLM (Google Gemini),
 which lives in `backend/server.js` — never inside the app. Until deployed:
@@ -171,7 +170,43 @@ which lives in `backend/server.js` — never inside the app. Until deployed:
 (Free-tier Render services "sleep" after inactivity — the first request
 after a while can take 20–30 seconds. Normal, not a bug.)
 
-### Setting up forgot-password emails (optional but recommended)
+### Setting up the AI phone-call booking feature (optional)
+
+The "Book by AI Phone Call" button (on the Appointments screen) has the
+assistant call a doctor's office to book/confirm a slot. It's off by
+default until you configure a telephony provider — without it, tapping
+the button shows a clear "not set up yet" message instead of failing
+silently.
+
+1. Create a Twilio account at **twilio.com** and buy/rent a phone number
+   (this is the number calls appear to come FROM).
+2. **Read this before expecting it to "just work":** Twilio's free trial
+   credit only lets you call phone numbers *you've manually verified* in
+   the Twilio console, and it plays a "trial account" notice before your
+   own message on every call. To call a real doctor's office, you need
+   to upgrade to a pay-as-you-go account — there's no minimum spend, and
+   voice calls run a few cents per minute, but there's no way to call an
+   arbitrary number for free.
+3. On Render, add three more environment variables alongside the ones
+   above:
+   - `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN` — from the Twilio
+     console's dashboard.
+   - `TWILIO_FROM_NUMBER` — the number you bought, in `+1XXXXXXXXXX`
+     format.
+   - `PUBLIC_BASE_URL` — your Render URL (e.g.
+     `https://sathi-backend.onrender.com`), so Twilio can call back into
+     the backend while a call is live.
+4. Redeploy. `schema.sql` already includes the `appointment_calls`
+   table this feature uses — re-run it if you deployed the database
+   before this feature was added (safe to re-run, see above).
+
+The call script (in `backend/appointment_calls.js`) always opens by
+identifying itself as an automated assistant, and never reads out the
+patient's medicines, reports, or other health details to whoever
+answers — only their name, the requested slot, and a callback number if
+asked.
+
+
 
 Without `EMAIL_USER`/`EMAIL_PASS` set, reset codes just print to your
 Render logs — fine for testing, useless for real users. To send actual
