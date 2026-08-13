@@ -23,6 +23,12 @@ dependencies:
   flutter_local_notifications: ^17.2.2
   timezone: ^0.9.4
   flutter_timezone: ^3.0.1
+  # Real ringing alarms (full-screen + sound) - used for medicine/appointment
+  # reminders instead of flutter_local_notifications' background-scheduled
+  # notifications, which proved unreliable across multiple Android OEMs
+  # (MIUI and Samsung One UI both silently suppressed them). See
+  # notification_service.dart for the full explanation.
+  alarm: ^5.0.0
 
   # Prescription photo capture + on-device OCR
   image_picker: ^1.1.2
@@ -48,3 +54,7 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/sounds/alarm.mp3
+    - assets/sounds/medicine_reminder.mp3
+    - assets/sounds/appointment_reminder.mp3

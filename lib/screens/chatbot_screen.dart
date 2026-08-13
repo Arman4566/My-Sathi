@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:uuid/uuid.dart';
 import '../models/medicine.dart';
@@ -7,6 +8,8 @@ import '../services/ai_backend_service.dart';
 import '../services/database_service.dart';
 import '../services/auth_service.dart';
 import '../services/notification_service.dart';
+import '../services/settings_service.dart';
+import '../services/app_text.dart';
 
 class _ChatMessage {
   final String text;
@@ -43,20 +46,18 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
   bool _listening = false;
   bool _speechAvailable = false;
 
+  late String _lang;
+
   @override
   void initState() {
     super.initState();
+    _lang = context.read<SettingsService>().languageCode;
     _messages = [
       _ChatMessage(
         widget.initialContextLabel != null
-            ? "Hi! I can see you'd like to discuss: ${widget.initialContextLabel}. "
-                "Ask me anything about it — I'll explain in plain language. "
-                "For anything specific to your treatment, I'll always suggest "
-                "checking with your doctor or pharmacist too."
-            : "Hi! I'm your health assistant. I know your current medicines, "
-                "appointments, and reports, so feel free to ask me about your "
-                "own situation — or ask me to add a medicine or appointment "
-                "and I'll confirm the details with you before saving anything.",
+            ? AppText.t('chat_greeting_context', _lang)
+                .replaceFirst('{context}', widget.initialContextLabel!)
+            : AppText.t('chat_greeting_default', _lang),
         false,
       ),
     ];
@@ -113,8 +114,19 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
       final reports = await DatabaseService.instance.getMedicalReports();
       final profile = await AuthService.instance.getCurrentProfile();
 
+      // Recent turns of this conversation (oldest first), excluding the
+      // message we just added above (the backend appends that itself as
+      // the final turn) — this is what lets the assistant follow up
+      // correctly instead of treating every message as a fresh, isolated
+      // question with no memory of what was said a moment ago.
+      final history = _messages
+          .sublist(0, _messages.length - 1)
+          .map((m) => {'role': m.fromUser ? 'user' : 'assistant', 'text': m.text})
+          .toList();
+
       final response = await AiBackendService.instance.sendChatMessage(
         message: text,
+        history: history,
         medicines: meds
             .map((m) => {
                   'name': m.name,
@@ -149,10 +161,18 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                 'gender': profile.gender,
               },
         reportContext: widget.initialContextText,
+        language: context.read<SettingsService>().languageCode,
       );
 
+      // Safety net: even though the backend is instructed not to use
+      // markdown in the reply, strip common markdown symbols if the model
+      // includes them anyway (e.g. **bold**, `code`, bullet dashes) so it
+      // never renders as literal asterisks/backticks in the plain-text
+      // chat bubble.
+      final cleanReply = _stripMarkdown(response.reply);
+
       setState(() => _messages
-          .add(_ChatMessage(response.reply, false, action: response.action)));
+          .add(_ChatMessage(cleanReply, false, action: response.action)));
     } catch (e) {
       final detail = e.toString().replaceFirst('Exception: ', '');
       final isKnownMessage = detail.isNotEmpty && !detail.contains('SocketException') &&
@@ -174,6 +194,20 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
         );
       }
     }
+  }
+
+  /// Removes common markdown syntax so a reply never shows literal
+  /// asterisks/backticks/heading-hashes if the model slips and includes
+  /// them despite being told not to.
+  String _stripMarkdown(String text) {
+    var out = text;
+    out = out.replaceAll(RegExp(r'```[a-zA-Z]*\n?'), '');
+    out = out.replaceAll('`', '');
+    out = out.replaceAll(RegExp(r'\*\*(.+?)\*\*'), r'$1');
+    out = out.replaceAll(RegExp(r'(?<!\*)\*(?!\*)(.+?)\*(?!\*)'), r'$1');
+    out = out.replaceAll(RegExp(r'^#{1,6}\s*', multiLine: true), '');
+    out = out.replaceAll(RegExp(r'^\s*[-*]\s+', multiLine: true), '');
+    return out.trim();
   }
 
   /// Actually saves the action the assistant proposed. Only ever called
@@ -235,14 +269,15 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
 
       setState(() {
         message.actionHandled = true;
-        _messages.add(_ChatMessage('✅ Added.', false));
+        _messages.add(_ChatMessage(AppText.t('added_confirmation', _lang), false));
       });
     } catch (e) {
+      final detail = e.toString().replaceFirst('Exception: ', '');
       setState(() {
         message.actionHandled = true;
         _messages.add(_ChatMessage(
-            "I couldn't save that — some details seem to be missing. "
-            "You can add it manually instead from My medicines or Appointments.",
+            "I couldn't save that ($detail). You can add it manually instead "
+            "from My medicines or Appointments.",
             false));
       });
     }
@@ -260,6 +295,8 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = context.watch<SettingsService>().languageCode;
+    _lang = lang;
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final bubbleColor = isDark ? const Color(0xFF2A2D3A) : Colors.grey.shade200;
@@ -267,7 +304,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     final inputFillColor = isDark ? const Color(0xFF1E2028) : Colors.grey.shade100;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Health Assistant')),
+      appBar: AppBar(title: Text(AppText.t('health_assistant', lang))),
       body: Column(
         children: [
           Expanded(
@@ -313,14 +350,14 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
               child: LinearProgressIndicator(),
             ),
           if (_listening)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
                 children: [
-                  Icon(Icons.mic, color: Colors.redAccent, size: 16),
-                  SizedBox(width: 6),
-                  Text('Listening…',
-                      style: TextStyle(color: Colors.redAccent, fontSize: 12)),
+                  const Icon(Icons.mic, color: Colors.redAccent, size: 16),
+                  const SizedBox(width: 6),
+                  Text(AppText.t('listening', lang),
+                      style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
                 ],
               ),
             ),
@@ -336,14 +373,14 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                       color: _listening ? Colors.redAccent : null,
                     ),
                     tooltip: _speechAvailable
-                        ? 'Voice input'
-                        : 'Voice input unavailable on this device',
+                        ? AppText.t('voice_input', lang)
+                        : AppText.t('voice_input_unavailable', lang),
                   ),
                   Expanded(
                     child: TextField(
                       controller: _controller,
                       decoration: InputDecoration(
-                        hintText: 'e.g. "I missed my evening dose"',
+                        hintText: AppText.t('chat_hint', lang),
                         filled: true,
                         fillColor: inputFillColor,
                         border: OutlineInputBorder(
@@ -374,6 +411,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
   /// is tapped — this is the same safety pattern used for AI-scanned
   /// prescriptions elsewhere in the app.
   Widget _actionCard(BuildContext context, _ChatMessage message) {
+    final lang = context.read<SettingsService>().languageCode;
     final action = message.action!;
     final isMedicine = action.type == 'add_medicine';
 
@@ -401,7 +439,9 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  isMedicine ? 'Add medicine?' : 'Add appointment?',
+                  isMedicine
+                      ? AppText.t('add_medicine_q', lang)
+                      : AppText.t('add_appointment_q', lang),
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
               ),
@@ -415,12 +455,12 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
             children: [
               TextButton(
                 onPressed: () => _dismissAction(message),
-                child: const Text('Not now'),
+                child: Text(AppText.t('not_now', lang)),
               ),
               const SizedBox(width: 8),
               ElevatedButton(
                 onPressed: () => _confirmAction(message),
-                child: const Text('Confirm'),
+                child: Text(AppText.t('confirm', lang)),
               ),
             ],
           ),

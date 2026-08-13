@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import '../models/appointment.dart';
 import '../services/database_service.dart';
 import '../services/notification_service.dart';
+import '../services/settings_service.dart';
+import '../services/app_text.dart';
+import 'book_by_call_screen.dart';
 
 class AppointmentsScreen extends StatefulWidget {
   const AppointmentsScreen({super.key});
@@ -27,6 +31,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
   /// Shared dialog for both adding a new appointment and editing an
   /// existing one. Pass `existing` to pre-fill the fields for editing.
   Future<void> _showAppointmentDialog({Appointment? existing}) async {
+    final lang = context.read<SettingsService>().languageCode;
     final doctorCtrl = TextEditingController(text: existing?.doctorName ?? '');
     final locationCtrl = TextEditingController(text: existing?.location ?? '');
     DateTime? pickedDate = existing?.dateTime;
@@ -38,17 +43,19 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setStateDialog) => AlertDialog(
-          title: Text(existing == null ? 'New appointment' : 'Edit appointment'),
+          title: Text(existing == null
+              ? AppText.t('new_appointment', lang)
+              : AppText.t('edit_appointment', lang)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
                 controller: doctorCtrl,
-                decoration: const InputDecoration(labelText: "Doctor's name"),
+                decoration: InputDecoration(labelText: AppText.t('doctors_name', lang)),
               ),
               TextField(
                 controller: locationCtrl,
-                decoration: const InputDecoration(labelText: 'Location'),
+                decoration: InputDecoration(labelText: AppText.t('location', lang)),
               ),
               const SizedBox(height: 12),
               Row(
@@ -65,7 +72,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
                         if (d != null) setStateDialog(() => pickedDate = d);
                       },
                       child: Text(pickedDate == null
-                          ? 'Pick date'
+                          ? AppText.t('pick_date', lang)
                           : '${pickedDate!.day}/${pickedDate!.month}/${pickedDate!.year}'),
                     ),
                   ),
@@ -78,7 +85,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
                         if (t != null) setStateDialog(() => pickedTime = t);
                       },
                       child: Text(pickedTime == null
-                          ? 'Pick time'
+                          ? AppText.t('pick_time', lang)
                           : pickedTime!.format(ctx)),
                     ),
                   ),
@@ -88,7 +95,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
           ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                onPressed: () => Navigator.pop(ctx), child: Text(AppText.t('cancel', lang))),
             ElevatedButton(
               onPressed: () async {
                 if (doctorCtrl.text.isEmpty ||
@@ -120,7 +127,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
                 } catch (e) {
                   if (ctx.mounted) {
                     ScaffoldMessenger.of(ctx).showSnackBar(
-                        SnackBar(content: Text('Could not save: $e')));
+                        SnackBar(content: Text(AppText.t('could_not_save', lang).replaceFirst('{error}', '$e'))));
                   }
                   return;
                 }
@@ -136,16 +143,14 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
                   await NotificationService.instance.scheduleAppointmentReminder(appt);
                 } catch (e) {
                   if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                      content: Text(
-                          'Saved, but the reminder could not be scheduled. '
-                          'Check notification/alarm permissions in phone settings.'),
-                      duration: Duration(seconds: 5),
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text(AppText.t('saved_reminder_failed', lang)),
+                      duration: const Duration(seconds: 5),
                     ));
                   }
                 }
               },
-              child: const Text('Save'),
+              child: Text(AppText.t('save', lang)),
             ),
           ],
         ),
@@ -154,19 +159,23 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
   }
 
   Future<void> _deleteAppointment(Appointment a) async {
+    final lang = context.read<SettingsService>().languageCode;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete appointment?'),
-        content: Text('This will remove Dr. ${a.doctorName} on '
-            '${a.dateTime.day}/${a.dateTime.month}/${a.dateTime.year} and cancel its reminder.'),
+        title: Text(AppText.t('delete_appointment_q', lang)),
+        content: Text(AppText.t('delete_appointment_body', lang)
+            .replaceFirst('{doctor}', a.doctorName)
+            .replaceFirst('{date}',
+                '${a.dateTime.day}/${a.dateTime.month}/${a.dateTime.year}')),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
+              child: Text(AppText.t('cancel', lang))),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+            child: Text(AppText.t('delete', lang),
+                style: const TextStyle(color: Colors.red)),
           ),
         ],
       ),
@@ -181,10 +190,26 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = context.watch<SettingsService>().languageCode;
     return Scaffold(
-      appBar: AppBar(title: const Text('Appointments')),
+      appBar: AppBar(
+        title: Text(AppText.t('appointments', lang)),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.call),
+            tooltip: 'Book by AI phone call',
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const BookByCallScreen()),
+              );
+              _load();
+            },
+          ),
+        ],
+      ),
       body: _appointments.isEmpty
-          ? const Center(child: Text('No upcoming appointments'))
+          ? Center(child: Text(AppText.t('no_upcoming_appointments', lang)))
           : ListView.builder(
               padding: const EdgeInsets.all(12),
               itemCount: _appointments.length,
@@ -204,13 +229,13 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
                       children: [
                         IconButton(
                           icon: const Icon(Icons.edit, size: 20),
-                          tooltip: 'Edit',
+                          tooltip: AppText.t('edit', lang),
                           onPressed: () => _showAppointmentDialog(existing: a),
                         ),
                         IconButton(
                           icon: const Icon(Icons.delete_outline,
                               size: 20, color: Colors.redAccent),
-                          tooltip: 'Delete',
+                          tooltip: AppText.t('delete', lang),
                           onPressed: () => _deleteAppointment(a),
                         ),
                       ],

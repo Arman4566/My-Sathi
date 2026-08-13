@@ -1,7 +1,6 @@
 // Updated Express backend using Google Gemini SDK Proxy
 const express = require('express');
 const cors = require('cors');
-const { GoogleGenAI } = require('@google/genai');
 require('dotenv').config();
 
 const { router: authRouter } = require('./auth');
@@ -10,9 +9,25 @@ const appointmentsRouter = require('./appointments');
 const prescriptionsRouter = require('./prescriptions');
 const medicalReportsRouter = require('./medical_reports');
 const healthRecordsRouter = require('./health_records');
+const { router: appointmentCallsRouter, twilioWebhookRouter } = require('./appointment_calls');
+
+// BUG FIX: this used to hardcode model: 'gemini-3.5-flash' at every call
+// site below — that model name doesn't exist. Since an "unknown model"
+// error isn't a 503 overload error, isOverloadedError() never caught it,
+// so generateWithRetry() never fell back to FALLBACK_MODEL either — every
+// single request (chat, prescription parsing, report summaries) failed
+// immediately, every time. That's why the assistant only ever showed
+// generic/fallback replies, never remembered anything, and could never
+// successfully save a medicine or appointment through chat.
+// The client + retry/fallback logic now lives in ai.js so the
+// appointment-call feature (appointment_calls.js) can reuse it too.
+const { generateWithRetry, isOverloadedError } = require('./ai');
 
 const app = express();
 app.use(cors());
+// Twilio posts webhook data as application/x-www-form-urlencoded, not
+// JSON — needed for the AI phone-call booking feature below.
+app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
 
 // User accounts (signup/login/forgot-password) and per-user data —
@@ -24,51 +39,12 @@ app.use('/api/appointments', appointmentsRouter);
 app.use('/api/prescriptions', prescriptionsRouter);
 app.use('/api/medical-reports', medicalReportsRouter);
 app.use('/api/health-records', healthRecordsRouter);
-
-// Automatically initializes using process.env.GEMINI_API_KEY
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
-// Gemini occasionally returns 503 "currently experiencing high demand" —
-// this is Google's servers being temporarily overloaded, not a bug here.
-// Retry a couple of times with backoff, then fall back to an older model
-// (which is sometimes less congested) before finally giving up.
-const FALLBACK_MODEL = 'gemini-2.5-flash';
-
-function isOverloadedError(err) {
-  return (
-    err?.status === 503 ||
-    err?.error?.code === 503 ||
-    /UNAVAILABLE|high demand|overloaded/i.test(err?.message || '')
-  );
-}
-
-async function generateWithRetry(config, { retries = 2 } = {}) {
-  let lastErr;
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      return await ai.models.generateContent(config);
-    } catch (err) {
-      lastErr = err;
-      if (!isOverloadedError(err) || attempt === retries) break;
-      const delayMs = 1000 * 2 ** attempt; // 1s, 2s, 4s...
-      console.warn(
-        `Gemini overloaded (attempt ${attempt + 1}/${retries + 1}), retrying in ${delayMs}ms...`
-      );
-      await new Promise(r => setTimeout(r, delayMs));
-    }
-  }
-
-  if (isOverloadedError(lastErr) && config.model !== FALLBACK_MODEL) {
-    console.warn(`Still overloaded after retries — falling back to ${FALLBACK_MODEL}`);
-    try {
-      return await ai.models.generateContent({ ...config, model: FALLBACK_MODEL });
-    } catch (fallbackErr) {
-      lastErr = fallbackErr;
-    }
-  }
-
-  throw lastErr;
-}
+// Authenticated endpoints the Flutter app calls (start a call, poll status).
+app.use('/api/appointment-calls', appointmentCallsRouter);
+// Unauthenticated webhooks Twilio itself calls back into during a live
+// call — these can't carry your app's login token, so they're protected
+// instead by the call's own unguessable UUID (see appointment_calls.js).
+app.use('/api/appointment-calls', twilioWebhookRouter);
 
 // ---------------------------------------------------------------------
 // 1) Prescription text -> structured medicine suggestions
@@ -78,7 +54,7 @@ app.post('/api/parse-prescription', async (req, res) => {
     const { rawText } = req.body;
 
     const response = await generateWithRetry({
-      model: 'gemini-3.5-flash',
+      model: PRIMARY_MODEL,
       contents: `You extract medicine details from raw OCR text of a doctor's
 prescription. The OCR text may be messy, misspelled, or incomplete because
 handwriting recognition is imperfect. Return ONLY valid JSON, no prose, no
@@ -129,15 +105,50 @@ Safety rules you always follow:
   but this varies a lot by medicine — check the leaflet or call your
   pharmacist to be sure"). Do NOT give a specific instruction for their
   specific medicine, since getting this wrong can be dangerous.
-- Always encourage contacting their doctor, pharmacist, or a nurse helpline
-  for anything specific to their medicine, dose, or condition.
 - If the message describes severe symptoms (difficulty breathing, chest
   pain, severe allergic reaction, confusion, fainting, suicidal thoughts,
   etc.), tell them clearly to seek emergency care immediately before
-  anything else.
+  anything else, and skip the steps below.
 - Keep answers short, warm, and easy to read for someone who may be
   unwell or anxious.
-- Never diagnose, never recommend starting/stopping/changing a dose.
+- Never diagnose. Never name, suggest, or propose starting a new
+  medicine, switching to an alternative, or changing a dose — not even
+  a common over-the-counter one. This is true no matter how the patient
+  phrases the request (e.g. "suggest a medicine", "what's a good
+  alternative", "what should I take"). This restriction is absolute and
+  does not soften even if the patient insists, says it's urgent, or
+  says they can't reach a doctor right now — for those cases, point
+  them to a pharmacist, nurse helpline, or urgent care instead of
+  naming anything yourself.
+
+When a patient describes a new or worsening symptom (not a question
+about a medicine they're already told you about), follow this instead
+of a generic deflection:
+1. Ask 1-2 short, specific triage questions if you don't have enough to
+   go on yet — e.g. how high a fever is, how long it's lasted, whether
+   there are other symptoms — before saying anything else. Only do this
+   once; if they've already answered, move on to the steps below rather
+   than asking again.
+2. Give general, non-drug-specific red-flag guidance for that symptom
+   (e.g. when a fever or headache like this typically warrants urgent
+   care vs. can be watched at home) — this is safe because it doesn't
+   name any medicine.
+3. Check ONLY the patient's CURRENT medicines list provided below — if
+   one of them is commonly used for this exact symptom, or the symptom
+   is a plausible side effect of one of them, you may mention that
+   factually (e.g. "you're already taking X, which is sometimes used
+   for headaches" or "this can sometimes be a side effect of Y you're
+   on"). This is strictly informational about medicines they are
+   ALREADY taking — never suggest a dose change, a new medicine, or an
+   alternative, even here.
+4. Always close by directing them to their doctor or pharmacist for
+   what to actually take, and suggest they mention the symptom plus
+   their current medicines when they do.
+- Write your "reply" text the way a caring person would text a friend —
+  plain conversational sentences only. Never use markdown formatting:
+  no **bold**, no bullet points or numbered lists, no backticks or code
+  blocks, no headings. If you want to list a few things, just say them
+  in a sentence ("take it with breakfast and dinner") instead of a list.
 
 You are given the patient's current medicines, appointments, recent
 report summaries, and basic profile below. Use this to answer questions
@@ -181,9 +192,16 @@ or:
 
 app.post('/api/chat', async (req, res) => {
   try {
-    const { message, medicines, appointments, reports, profile, reportContext } = req.body;
+    const { message, history, medicines, appointments, reports, profile, reportContext, language } = req.body;
 
     const contextParts = [];
+    if (language === 'hi') {
+      contextParts.push('Reply entirely in Hindi (हिन्दी), written in Devanagari '
+        + 'script — not Hinglish or English. This applies to every "reply" you '
+        + 'write, including clarifying questions and confirmations. Keep medicine '
+        + 'names, dosage units, and dates as given (do not translate proper nouns '
+        + 'or numbers), but every sentence around them should be natural Hindi.');
+    }
     if (medicines?.length) {
       contextParts.push(`Current medicines:\n${medicines
         .map(m => `- ${m.name} (${m.dosage}), ${m.instructions}, times: ${(m.times || []).join(', ')}, frequency: ${m.frequency}${m.endDate ? `, until ${m.endDate}` : ''}`)
@@ -209,9 +227,26 @@ app.post('/api/chat', async (req, res) => {
     // for it to propose sensible dateTime/endDate values.
     contextParts.push(`Today's date is ${new Date().toISOString().slice(0, 10)}.`);
 
+    // BUG FIX: previously only `message` (the latest turn) was ever sent
+    // to the model — every request was stateless, so the assistant had no
+    // memory of anything said earlier in the same conversation and could
+    // never handle a follow-up like "make it 9pm instead". Now we forward
+    // the recent turns too, as proper multi-turn `contents`. Capped to the
+    // last 20 turns so a long-running chat doesn't blow up token usage.
+    const priorTurns = Array.isArray(history) ? history.slice(-20) : [];
+    const contents = [
+      ...priorTurns
+        .filter(h => h && typeof h.text === 'string' && h.text.trim())
+        .map(h => ({
+          role: h.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: h.text }],
+        })),
+      { role: 'user', parts: [{ text: message }] },
+    ];
+
     const response = await generateWithRetry({
-      model: 'gemini-3.5-flash',
-      contents: message,
+      model: PRIMARY_MODEL,
+      contents,
       config: {
         systemInstruction: CHAT_SYSTEM_PROMPT + '\n\n' + contextParts.join('\n\n'),
         responseMimeType: 'application/json',
@@ -271,7 +306,7 @@ app.post('/api/summarize-report', async (req, res) => {
     }
 
     const response = await generateWithRetry({
-      model: 'gemini-3.5-flash',
+      model: PRIMARY_MODEL,
       contents: rawText,
       config: {
         systemInstruction: REPORT_SUMMARY_PROMPT,

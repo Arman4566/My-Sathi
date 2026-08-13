@@ -3,6 +3,11 @@ import 'package:provider/provider.dart';
 import 'services/notification_service.dart';
 import 'services/settings_service.dart';
 import 'screens/splash_screen.dart';
+import 'screens/alarm_ring_screen.dart';
+
+/// Lets code outside the widget tree (the alarm-ring stream listener)
+/// push a screen on top of whatever's currently showing.
+final navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -18,6 +23,15 @@ Future<void> main() async {
     await NotificationService.instance.init();
   } catch (e) {
     debugPrint('Notification init failed (app will still open): $e');
+  }
+
+  // Without this, alarms would still ring (sound plays) but nothing would
+  // ever show the actual full-screen alarm UI — this is what makes it
+  // feel like a real alarm going off instead of a quiet notification.
+  try {
+    listenForRingingAlarms(navigatorKey);
+  } catch (e) {
+    debugPrint('Could not start alarm-ring listener: $e');
   }
 
   final settings = SettingsService();
@@ -43,6 +57,7 @@ class PatientCareApp extends StatelessWidget {
     final settings = context.watch<SettingsService>();
 
     return MaterialApp(
+      navigatorKey: navigatorKey,
       title: 'Sathi',
       debugShowCheckedModeBanner: false,
       themeMode: settings.themeMode,

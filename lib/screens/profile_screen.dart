@@ -1,8 +1,11 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:provider/provider.dart';
 import '../models/user_profile.dart';
 import '../services/auth_service.dart';
+import '../services/settings_service.dart';
+import '../services/app_text.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -54,24 +57,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
     required void Function(String) onSave,
     TextInputType keyboardType = TextInputType.text,
   }) async {
+    final lang = context.read<SettingsService>().languageCode;
     final ctrl = TextEditingController(text: currentValue);
     await showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Edit $label'),
+        title: Text(AppText.t('edit_field', lang).replaceFirst('{field}', label)),
         content: TextField(
           controller: ctrl,
           keyboardType: keyboardType,
           autofocus: true,
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(AppText.t('cancel', lang))),
           ElevatedButton(
             onPressed: () {
               onSave(ctrl.text.trim());
               Navigator.pop(ctx);
             },
-            child: const Text('Save'),
+            child: Text(AppText.t('save', lang)),
           ),
         ],
       ),
@@ -92,11 +96,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = context.watch<SettingsService>().languageCode;
     if (_loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     if (_profile == null) {
-      return const Scaffold(body: Center(child: Text('Not logged in')));
+      return Scaffold(body: Center(child: Text(AppText.t('not_logged_in', lang))));
     }
 
     final p = _profile!;
@@ -104,7 +109,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final bmi = p.bmi;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Profile')),
+      appBar: AppBar(title: Text(AppText.t('profile', lang))),
       body: ListView(
         children: [
           const SizedBox(height: 20),
@@ -148,23 +153,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
           Center(
             child: TextButton(
               onPressed: () => _editField(
-                label: 'name',
+                label: AppText.t('name', lang),
                 currentValue: p.name,
                 onSave: (v) {
                   if (v.isNotEmpty) _saveProfile(p.copyWith(name: v));
                 },
               ),
-              child: const Text('Edit'),
+              child: Text(AppText.t('edit', lang)),
             ),
           ),
           const SizedBox(height: 8),
           const Divider(height: 1),
           _infoRow(
             icon: Icons.person_outline,
-            label: 'Name',
+            label: AppText.t('name', lang),
             value: p.name,
             onTap: () => _editField(
-              label: 'name',
+              label: AppText.t('name', lang),
               currentValue: p.name,
               onSave: (v) {
                 if (v.isNotEmpty) _saveProfile(p.copyWith(name: v));
@@ -173,16 +178,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           _infoRow(
             icon: Icons.email_outlined,
-            label: 'Email',
+            label: AppText.t('email', lang),
             value: p.email,
             onTap: null, // email is the account identifier — not editable here
           ),
           _infoRow(
             icon: Icons.cake_outlined,
-            label: 'Age',
-            value: p.age?.toString() ?? 'Not set',
+            label: AppText.t('age', lang),
+            value: p.age?.toString() ?? AppText.t('not_set', lang),
             onTap: () => _editField(
-              label: 'age',
+              label: AppText.t('age', lang),
               currentValue: p.age?.toString() ?? '',
               keyboardType: TextInputType.number,
               onSave: (v) => _saveProfile(p.copyWith(age: int.tryParse(v))),
@@ -190,10 +195,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           _infoRow(
             icon: Icons.monitor_weight_outlined,
-            label: 'Weight (kg)',
-            value: p.weightKg?.toString() ?? 'Not set',
+            label: AppText.t('weight_kg', lang),
+            value: p.weightKg?.toString() ?? AppText.t('not_set', lang),
             onTap: () => _editField(
-              label: 'weight (kg)',
+              label: AppText.t('weight_kg', lang),
               currentValue: p.weightKg?.toString() ?? '',
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               onSave: (v) => _saveProfile(p.copyWith(weightKg: double.tryParse(v))),
@@ -201,10 +206,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           _infoRow(
             icon: Icons.height,
-            label: 'Height (cm)',
-            value: p.heightCm?.toString() ?? 'Not set',
+            label: AppText.t('height_cm', lang),
+            value: p.heightCm?.toString() ?? AppText.t('not_set', lang),
             onTap: () => _editField(
-              label: 'height (cm)',
+              label: AppText.t('height_cm', lang),
               currentValue: p.heightCm?.toString() ?? '',
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               onSave: (v) => _saveProfile(p.copyWith(heightCm: double.tryParse(v))),
@@ -212,18 +217,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           _infoRow(
             icon: Icons.wc,
-            label: 'Gender',
-            value: p.gender ?? 'Not set',
+            label: AppText.t('gender', lang),
+            value: p.gender ?? AppText.t('not_set', lang),
             onTap: () async {
+              final options = {
+                'Female': AppText.t('female', lang),
+                'Male': AppText.t('male', lang),
+                'Other': AppText.t('other', lang),
+              };
               final choice = await showDialog<String>(
                 context: context,
                 builder: (ctx) => SimpleDialog(
-                  title: const Text('Gender'),
+                  title: Text(AppText.t('gender', lang)),
                   children: [
-                    for (final g in ['Female', 'Male', 'Other'])
+                    for (final g in options.entries)
                       SimpleDialogOption(
-                        onPressed: () => Navigator.pop(ctx, g),
-                        child: Text(g),
+                        onPressed: () => Navigator.pop(ctx, g.key),
+                        child: Text(g.value),
                       ),
                   ],
                 ),
@@ -240,7 +250,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   color: Theme.of(context).colorScheme.primaryContainer,
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Text('BMI: ${bmi.toStringAsFixed(1)}',
+                child: Text(
+                    AppText.t('bmi_label', lang)
+                        .replaceFirst('{value}', bmi.toStringAsFixed(1)),
                     style: const TextStyle(fontWeight: FontWeight.w600)),
               ),
             ),

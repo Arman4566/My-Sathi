@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../models/prescription.dart';
 import '../services/database_service.dart';
 import 'prescription_detail_screen.dart';
+import '../services/settings_service.dart';
+import '../services/app_text.dart';
 
 class PrescriptionHistoryScreen extends StatefulWidget {
   const PrescriptionHistoryScreen({super.key});
@@ -26,12 +29,13 @@ class _PrescriptionHistoryScreenState extends State<PrescriptionHistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = context.watch<SettingsService>().languageCode;
     return Scaffold(
-      appBar: AppBar(title: const Text('Reports & prescriptions')),
+      appBar: AppBar(title: Text(AppText.t('reports_and_prescriptions', lang))),
       body: _prescriptions.isEmpty
           ? Center(
               child: Text(
-                'No scanned prescriptions or reports yet.',
+                AppText.t('no_scanned_yet', lang),
                 style: TextStyle(color: Theme.of(context).hintColor),
               ),
             )
@@ -45,7 +49,7 @@ class _PrescriptionHistoryScreenState extends State<PrescriptionHistoryScreen> {
                     leading:
                         const Icon(Icons.description_outlined, color: Color(0xFF5B7CFA)),
                     title: Text(p.doctorName.isEmpty
-                        ? 'Scanned document'
+                        ? AppText.t('scanned_document', lang)
                         : 'Dr. ${p.doctorName}'),
                     subtitle: Text(
                         '${p.dateAdded.day}/${p.dateAdded.month}/${p.dateAdded.year}'),

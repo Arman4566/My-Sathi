@@ -6,6 +6,70 @@ appointment reminders, track your health over time, chat with a
 safety-first AI assistant (with voice input), and a real cloud account
 system with password recovery.
 
+---
+
+## 📋 HackIndia submission — start here
+
+### The problem
+Patients managing multiple medicines — especially the elderly, those
+handling chronic conditions, and people in smaller towns without easy
+day-to-day access to a doctor — struggle with three connected problems no
+single existing app solves together: **forgetting or mistiming doses**,
+**fragmented paper/photo health records with no plain-language summary**,
+and **no safe, immediate place to ask a medication question** without
+guessing or waiting days for an appointment.
+
+### Our solution
+Sathi unifies all three: scan a prescription or lab report and get
+AI-structured medicines and a plain-language summary (always shown for
+human confirmation before saving — never auto-trusted); alarm-style
+reminders that adapt to daily or custom schedules and auto-expire when a
+course ends; and a safety-first AI assistant that knows your actual
+medicines, appointments, and reports, can answer real questions about
+your situation, and can propose adding a medicine or appointment through
+conversation — but never saves anything without your explicit
+confirmation. All backed by a real cloud account so your data isn't
+trapped on one phone.
+
+### Tech stack
+- **Frontend**: Flutter (Android), Provider for state management
+- **Local storage**: SQLite (`sqflite`) — offline-first, syncs to cloud in the background
+- **Backend**: Node.js + Express, deployed on Render
+- **Cloud database**: PostgreSQL (Neon/Supabase)
+- **AI**: Google Gemini (`gemini-3.5-flash`, with automatic retry + model fallback on overload)
+- **OCR**: Google ML Kit Text Recognition (on-device)
+- **Auth**: JWT + bcrypt, with email-based password reset
+- **Notifications**: `flutter_local_notifications` with exact-alarm scheduling
+- **Voice input**: `speech_to_text`
+
+### Demo video
+📺 **[Add your demo video link here before submitting]**
+
+### Screenshots
+**[Add 2-3 screenshots here — good candidates: home dashboard, scan-and-confirm flow, chatbot proposing an action, a medicine reminder firing]**
+
+### Try it yourself
+This is a full-stack app (Flutter + Node backend + Postgres + Gemini), so
+a live judge build requires the setup steps below — budget time for that,
+or rely on the demo video for a faster look. If you've deployed the
+backend already, judges only need to install the APK and log in with a
+test account — see `flutter build apk --release` in the setup section
+below, and consider having a pre-populated test account ready (a few
+medicines, an appointment, a scanned report already added) so the app
+isn't empty on first open.
+
+### Key features checklist (what to look for in the demo)
+- [ ] Scan a prescription → AI extracts medicines → user confirms before saving
+- [ ] Medicine reminder fires as an alarm-style notification at the scheduled time
+- [ ] Upload a lab report → AI generates a plain-language summary
+- [ ] Chatbot answers a question using the patient's real medicines/appointments/reports
+- [ ] Chatbot proposes adding a medicine/appointment → user must confirm before it saves
+- [ ] Login on a second device pulls the same data down (cloud sync)
+- [ ] Forgot-password flow sends a real reset code by email
+- [ ] Dark mode and language switch apply across the whole app
+
+---
+
 ## What's included
 
 ```
@@ -56,13 +120,85 @@ Sync failures (offline, backend not deployed yet) never block the app —
 local writes always succeed first; the cloud push happens in the
 background and is simply skipped if it can't reach the backend that time.
 
+## ⚠️ Before the chatbot or AI-powered features will work
 
+Prescription/report scanning and the chatbot need an LLM (Google Gemini),
+which lives in `backend/server.js` — never inside the app. Until deployed:
+- The chatbot replies "Sorry, I couldn't reach the assistant..."
+- Report summaries fail to generate
+- Prescription scanning falls back to a rough on-device keyword parser
+
+### Deploy the backend (Render.com — free tier)
+
+1. Get a Gemini API key from **aistudio.google.com** (or Google Cloud
+   Console). If you ever pasted a key into a chat, screenshot, or public
+   repo, delete it there and generate a fresh one — treat any exposed key
+   as compromised.
+2. Set up a free Postgres database — **Neon** (neon.tech) or **Supabase**
+   (supabase.com) both work well. Copy the connection string they give
+   you (it looks like `postgresql://user:pass@host/db?sslmode=require`).
+3. Run the schema once against that database:
+   - Neon/Supabase both have a SQL editor in their dashboard — paste in
+     the contents of `backend/schema.sql` and run it. (Or use `psql
+     "<your connection string>" -f backend/schema.sql` from a terminal if
+     you have `psql` installed.)
+   - Already deployed this backend before? `schema.sql` is safe to
+     re-run — it only creates tables that don't exist yet, so re-running
+     it after an update just adds any new tables without touching your
+     existing data.
+4. Put the `backend/` folder in its own GitHub repo (or a subfolder of an
+   existing one).
+5. Go to render.com → New → **Web Service** → connect that repo.
+   - Root directory: `backend`
+   - Build command: `npm install`
+   - Start command: `npm start`
+6. Under **Environment**, add:
+   - `GEMINI_API_KEY` = your key
+   - `DATABASE_URL` = your Postgres connection string
+   - `JWT_SECRET` = a long random string (generate one with
+     `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`)
+   - `EMAIL_USER` / `EMAIL_PASS` = optional, for forgot-password emails to
+     actually send (see below) — leave blank during testing; reset codes
+     will just print to Render's logs instead.
+7. Deploy. Render gives you a URL like `https://sathi-backend.onrender.com`.
+8. Open `lib/services/ai_backend_service.dart` and replace:
+   ```dart
+   static const String baseUrl = 'https://sathi-backend.onrender.com';
+   ```
+   (`auth_service.dart` reuses this same URL automatically.)
+9. `flutter run` again.
+
+(Free-tier Render services "sleep" after inactivity — the first request
+after a while can take 20–30 seconds. Normal, not a bug.)
+
+### Setting up forgot-password emails (optional but recommended)
+
+Without `EMAIL_USER`/`EMAIL_PASS` set, reset codes just print to your
+Render logs — fine for testing, useless for real users. To send actual
+emails:
+- **Easiest**: use a Gmail account with an **App Password** (not your
+  normal password) — see support.google.com/accounts/answer/185833.
+  Set `EMAIL_USER` to that Gmail address and `EMAIL_PASS` to the app
+  password.
+- **More scalable**: swap the `nodemailer` Gmail transport in `auth.js`
+  for a transactional email API like Resend or SendGrid — better
+  deliverability at real-world volume, small code change.
 
 ## New features in this version
 
 ### Splash screen
 A branded loading screen shown while the app initializes (auth check,
 notification setup) — see `splash_screen.dart`.
+
+### Book an appointment by AI phone call
+On the Appointments screen, tap the phone icon in the top bar to have
+the assistant call a doctor's office directly: enter the office's phone
+number plus a requested date/time, and the AI places a real call
+(via Twilio, see setup above), has a short back-and-forth with whoever
+answers, and reports back whether the slot was confirmed. A confirmed
+call can be saved straight into your appointments list. Needs the
+Twilio setup above — until then it tells you clearly, rather than
+pretending to call.
 
 ### Profile
 WhatsApp-style layout: avatar (tap the camera badge to change it), and

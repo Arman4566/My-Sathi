@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
+import '../services/settings_service.dart';
+import '../services/app_text.dart';
 import 'login_screen.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
@@ -28,8 +31,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       await AuthService.instance.forgotPassword(_emailCtrl.text.trim());
       setState(() {
         _codeSent = true;
-        _info = 'If that email is registered, a 6-digit code has been sent. '
-            'It expires in 15 minutes.';
+        _info = AppText.t('code_sent_info', context.read<SettingsService>().languageCode);
       });
     } catch (e) {
       setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
@@ -40,7 +42,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
   Future<void> _resetPassword() async {
     if (_codeCtrl.text.trim().isEmpty || _newPasswordCtrl.text.length < 4) {
-      setState(() => _error = 'Enter the code and a password of at least 4 characters.');
+      setState(() => _error = AppText.t('enter_code_password', context.read<SettingsService>().languageCode));
       return;
     }
     setState(() {
@@ -54,7 +56,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Password updated. Please log in.')));
+            SnackBar(content: Text(AppText.t('password_updated_login', context.read<SettingsService>().languageCode))));
         Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (_) => const LoginScreen()),
@@ -70,8 +72,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = context.watch<SettingsService>().languageCode;
     return Scaffold(
-      appBar: AppBar(title: const Text('Reset password')),
+      appBar: AppBar(title: Text(AppText.t('reset_password', lang))),
       body: Padding(
         padding: const EdgeInsets.all(24),
         child: SingleChildScrollView(
@@ -79,15 +82,13 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               if (!_codeSent) ...[
-                const Text(
-                  "Enter your account email and we'll send you a 6-digit reset code.",
-                ),
+                Text(AppText.t('enter_email_reset_note', lang)),
                 const SizedBox(height: 16),
                 TextField(
                   controller: _emailCtrl,
                   keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(
-                      labelText: 'Email', border: OutlineInputBorder()),
+                  decoration: InputDecoration(
+                      labelText: AppText.t('email', lang), border: const OutlineInputBorder()),
                 ),
                 const SizedBox(height: 20),
                 ElevatedButton(
@@ -98,7 +99,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                           width: 20,
                           child: CircularProgressIndicator(
                               strokeWidth: 2, color: Colors.white))
-                      : const Text('Send reset code'),
+                      : Text(AppText.t('send_reset_code', lang)),
                 ),
               ] else ...[
                 if (_info != null) ...[
@@ -108,15 +109,15 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 TextField(
                   controller: _codeCtrl,
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                      labelText: '6-digit code', border: OutlineInputBorder()),
+                  decoration: InputDecoration(
+                      labelText: AppText.t('six_digit_code', lang), border: const OutlineInputBorder()),
                 ),
                 const SizedBox(height: 14),
                 TextField(
                   controller: _newPasswordCtrl,
                   obscureText: true,
-                  decoration: const InputDecoration(
-                      labelText: 'New password', border: OutlineInputBorder()),
+                  decoration: InputDecoration(
+                      labelText: AppText.t('new_password', lang), border: const OutlineInputBorder()),
                 ),
                 const SizedBox(height: 20),
                 ElevatedButton(
@@ -127,11 +128,11 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                           width: 20,
                           child: CircularProgressIndicator(
                               strokeWidth: 2, color: Colors.white))
-                      : const Text('Reset password'),
+                      : Text(AppText.t('reset_password', lang)),
                 ),
                 TextButton(
                   onPressed: () => setState(() => _codeSent = false),
-                  child: const Text('Use a different email'),
+                  child: Text(AppText.t('use_different_email', lang)),
                 ),
               ],
               if (_error != null) ...[

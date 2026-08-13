@@ -1,12 +1,15 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import '../models/medicine.dart';
 import '../models/prescription.dart';
 import '../services/database_service.dart';
 import '../services/notification_service.dart';
 import '../services/ocr_service.dart';
+import '../services/settings_service.dart';
+import '../services/app_text.dart';
 
 const _weekdayLabels = {
   1: 'Mon',
@@ -56,19 +59,40 @@ class _ScanPrescriptionScreenState extends State<ScanPrescriptionScreen> {
   String? _error;
 
   Future<void> _pickImage(ImageSource source) async {
-    final picked = await _picker.pickImage(source: source, imageQuality: 85);
+    // Previously unguarded: if the camera/gallery permission was denied or
+    // picking failed for any other reason, pickImage() throws and this
+    // whole method silently died with no image, no error, and no way to
+    // reach the "Confirm & save" button — which is exactly what "scanning
+    // doesn't add anything" looks like from the outside.
+    XFile? picked;
+    final lang = context.read<SettingsService>().languageCode;
+    try {
+      picked = await _picker.pickImage(source: source, imageQuality: 85);
+    } catch (e) {
+      if (mounted) {
+        final sourceLabel = source == ImageSource.camera
+            ? AppText.t('camera', lang)
+            : AppText.t('gallery', lang);
+        setState(() => _error = AppText.t('could_not_open_camera_gallery', lang)
+            .replaceFirst('{source}', sourceLabel));
+      }
+      return;
+    }
     if (picked == null) return;
 
     setState(() {
-      _image = File(picked.path);
+      _image = File(picked!.path);
       _loading = true;
       _error = null;
       _suggestions = [];
     });
 
     try {
+      // Extract OCR text once and reuse it, instead of scanning the image
+      // twice (extractRawText + scanAndParse each used to run OCR
+      // separately on the same photo).
       final raw = await _ocr.extractRawText(picked.path);
-      final suggestions = await _ocr.scanAndParse(picked.path);
+      final suggestions = await _ocr.scanAndParse(raw);
       setState(() {
         _rawText = raw;
         _suggestions = suggestions
@@ -84,19 +108,18 @@ class _ScanPrescriptionScreenState extends State<ScanPrescriptionScreen> {
                 ))
             .toList();
         if (_suggestions.isEmpty) {
-          _error =
-              'No medicines could be detected in this photo. You can add them manually from the "My medicines" screen instead.';
+          _error = AppText.t('no_medicines_detected', lang);
         }
       });
     } catch (e) {
-      setState(() => _error =
-          'Could not read this prescription automatically. You can still add medicines manually from the "My medicines" screen.');
+      setState(() => _error = AppText.t('could_not_read_prescription', lang));
     } finally {
       setState(() => _loading = false);
     }
   }
 
   Future<void> _editSuggestion(_EditableSuggestion s) async {
+    final lang = context.read<SettingsService>().languageCode;
     final nameCtrl = TextEditingController(text: s.name);
     final dosageCtrl = TextEditingController(text: s.dosage);
     final instructionsCtrl = TextEditingController(text: s.instructions);
@@ -109,7 +132,7 @@ class _ScanPrescriptionScreenState extends State<ScanPrescriptionScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setStateDialog) => AlertDialog(
-          title: const Text('Edit medicine'),
+          title: Text(AppText.t('edit_medicine_title', lang)),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -117,18 +140,18 @@ class _ScanPrescriptionScreenState extends State<ScanPrescriptionScreen> {
               children: [
                 TextField(
                   controller: nameCtrl,
-                  decoration: const InputDecoration(labelText: 'Medicine name'),
+                  decoration: InputDecoration(labelText: AppText.t('medicine_name_short', lang)),
                 ),
                 TextField(
                   controller: dosageCtrl,
-                  decoration: const InputDecoration(labelText: 'Dosage'),
+                  decoration: InputDecoration(labelText: AppText.t('dosage_short', lang)),
                 ),
                 TextField(
                   controller: instructionsCtrl,
-                  decoration: const InputDecoration(labelText: 'Instructions'),
+                  decoration: InputDecoration(labelText: AppText.t('instructions_short', lang)),
                 ),
                 const SizedBox(height: 14),
-                Text('Reminder times', style: Theme.of(ctx).textTheme.labelLarge),
+                Text(AppText.t('reminder_times', lang), style: Theme.of(ctx).textTheme.labelLarge),
                 Wrap(
                   spacing: 8,
                   children: [
@@ -139,7 +162,7 @@ class _ScanPrescriptionScreenState extends State<ScanPrescriptionScreen> {
                       ),
                     ActionChip(
                       avatar: const Icon(Icons.add, size: 18),
-                      label: const Text('Add time'),
+                      label: Text(AppText.t('add_time', lang)),
                       onPressed: () async {
                         final picked = await showTimePicker(
                             context: ctx, initialTime: TimeOfDay.now());
@@ -149,22 +172,22 @@ class _ScanPrescriptionScreenState extends State<ScanPrescriptionScreen> {
                   ],
                 ),
                 const SizedBox(height: 14),
-                Text('Frequency', style: Theme.of(ctx).textTheme.labelLarge),
+                Text(AppText.t('frequency', lang), style: Theme.of(ctx).textTheme.labelLarge),
                 RadioGroup<MedicineFrequency>(
                   groupValue: frequency,
                   onChanged: (v) => setStateDialog(() => frequency = v!),
-                  child: const Column(
+                  child: Column(
                     children: [
                       RadioListTile<MedicineFrequency>(
                         contentPadding: EdgeInsets.zero,
                         dense: true,
-                        title: Text('Every day'),
+                        title: Text(AppText.t('every_day', lang)),
                         value: MedicineFrequency.daily,
                       ),
                       RadioListTile<MedicineFrequency>(
                         contentPadding: EdgeInsets.zero,
                         dense: true,
-                        title: Text('Custom days'),
+                        title: Text(AppText.t('custom_days', lang)),
                         value: MedicineFrequency.custom,
                       ),
                     ],
@@ -189,14 +212,14 @@ class _ScanPrescriptionScreenState extends State<ScanPrescriptionScreen> {
                     ],
                   ),
                 const SizedBox(height: 14),
-                Text('Stop after (optional)',
+                Text(AppText.t('stop_after_optional', lang),
                     style: Theme.of(ctx).textTheme.labelLarge),
                 Row(
                   children: [
                     TextButton.icon(
                       icon: const Icon(Icons.event),
                       label: Text(endDate == null
-                          ? 'No end date — ongoing'
+                          ? AppText.t('no_end_date', lang)
                           : '${endDate!.day}/${endDate!.month}/${endDate!.year}'),
                       onPressed: () async {
                         final picked = await showDatePicker(
@@ -220,7 +243,7 @@ class _ScanPrescriptionScreenState extends State<ScanPrescriptionScreen> {
           ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                onPressed: () => Navigator.pop(ctx), child: Text(AppText.t('cancel', lang))),
             ElevatedButton(
               onPressed: () {
                 setState(() {
@@ -234,7 +257,7 @@ class _ScanPrescriptionScreenState extends State<ScanPrescriptionScreen> {
                 });
                 Navigator.pop(ctx);
               },
-              child: const Text('Done'),
+              child: Text(AppText.t('done', lang)),
             ),
           ],
         ),
@@ -244,8 +267,10 @@ class _ScanPrescriptionScreenState extends State<ScanPrescriptionScreen> {
 
   Future<void> _confirmAndSave() async {
     if (_image == null) return;
+    final lang = context.read<SettingsService>().languageCode;
     final prescriptionId = const Uuid().v4();
     var reminderFailures = 0;
+    var skipped = 0;
 
     try {
       await DatabaseService.instance.insertPrescription(Prescription(
@@ -257,7 +282,14 @@ class _ScanPrescriptionScreenState extends State<ScanPrescriptionScreen> {
       ));
 
       for (final s in _suggestions) {
-        if (s.name.trim().isEmpty || s.times.isEmpty) continue;
+        // Previously skipped silently — if every suggestion was missing a
+        // name or a reminder time, "Confirm & save" appeared to do nothing
+        // at all. Now the user is told exactly how many were skipped and
+        // why, via the snackbar below.
+        if (s.name.trim().isEmpty || s.times.isEmpty) {
+          skipped++;
+          continue;
+        }
 
         final medicine = Medicine(
           id: const Uuid().v4(),
@@ -286,18 +318,32 @@ class _ScanPrescriptionScreenState extends State<ScanPrescriptionScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Could not save: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(AppText.t('could_not_save', lang).replaceFirst('{error}', '$e'))));
       }
       return;
     }
 
     if (mounted) {
+      if (skipped > 0 && skipped == _suggestions.length) {
+        // Nothing was actually saved — say so clearly instead of just
+        // closing the screen as if it worked.
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(AppText.t('nothing_saved_missing_fields', lang)),
+          duration: const Duration(seconds: 6),
+        ));
+        return;
+      }
+      if (skipped > 0) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(AppText.t('items_skipped', lang).replaceFirst('{count}', '$skipped')),
+          duration: const Duration(seconds: 5),
+        ));
+      }
       if (reminderFailures > 0) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(
-              'Saved, but $reminderFailures reminder(s) could not be scheduled. '
-              'Check notification/alarm permissions in phone settings.'),
+          content: Text(AppText.t('reminders_failed_count', lang)
+              .replaceFirst('{count}', '$reminderFailures')),
           duration: const Duration(seconds: 5),
         ));
       }
@@ -313,8 +359,9 @@ class _ScanPrescriptionScreenState extends State<ScanPrescriptionScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = context.watch<SettingsService>().languageCode;
     return Scaffold(
-      appBar: AppBar(title: const Text('Scan prescription')),
+      appBar: AppBar(title: Text(AppText.t('scan_prescription', lang))),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -332,7 +379,7 @@ class _ScanPrescriptionScreenState extends State<ScanPrescriptionScreen> {
                   child: ElevatedButton.icon(
                     onPressed: () => _pickImage(ImageSource.camera),
                     icon: const Icon(Icons.camera_alt),
-                    label: const Text('Take photo'),
+                    label: Text(AppText.t('take_photo', lang)),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -340,7 +387,7 @@ class _ScanPrescriptionScreenState extends State<ScanPrescriptionScreen> {
                   child: OutlinedButton.icon(
                     onPressed: () => _pickImage(ImageSource.gallery),
                     icon: const Icon(Icons.photo_library),
-                    label: const Text('From gallery'),
+                    label: Text(AppText.t('from_gallery', lang)),
                   ),
                 ),
               ],
@@ -350,11 +397,11 @@ class _ScanPrescriptionScreenState extends State<ScanPrescriptionScreen> {
             if (_error != null)
               Text(_error!, style: const TextStyle(color: Colors.orange)),
             if (_suggestions.isNotEmpty) ...[
-              const Text('Please review before saving',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
+              Text(AppText.t('review_before_saving', lang),
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
               const SizedBox(height: 4),
               Text(
-                'Automatic reading isn\'t perfect — tap any item to fix the name, dose, times, frequency, or add an end date.',
+                AppText.t('automatic_reading_note', lang),
                 style: TextStyle(color: Theme.of(context).hintColor, fontSize: 12),
               ),
               const SizedBox(height: 12),
@@ -364,16 +411,17 @@ class _ScanPrescriptionScreenState extends State<ScanPrescriptionScreen> {
                   itemBuilder: (context, i) {
                     final s = _suggestions[i];
                     final freqLabel = s.frequency == MedicineFrequency.daily
-                        ? 'Every day'
+                        ? AppText.t('every_day', lang)
                         : s.customDays.isEmpty
-                            ? 'Custom (pick days)'
-                            : 'On ${s.customDays.map((d) => _weekdayLabels[d]).join(", ")}';
+                            ? AppText.t('custom_pick_days', lang)
+                            : AppText.t('on_days', lang).replaceFirst('{days}',
+                                s.customDays.map((d) => _weekdayLabels[d]).join(", "));
                     return Card(
                       child: ListTile(
-                        title: Text(s.name.isEmpty ? '(name unclear)' : s.name),
+                        title: Text(s.name.isEmpty ? AppText.t('name_unclear', lang) : s.name),
                         subtitle: Text(
                             '${s.dosage} • ${s.instructions}\n$freqLabel at ${s.times.map((t) => t.format(context)).join(", ")}'
-                            '${s.endDate != null ? " • until ${s.endDate!.day}/${s.endDate!.month}/${s.endDate!.year}" : ""}'),
+                            '${s.endDate != null ? AppText.t('until_date', lang).replaceFirst('{date}', '${s.endDate!.day}/${s.endDate!.month}/${s.endDate!.year}') : ""}'),
                         isThreeLine: true,
                         trailing: IconButton(
                           icon: const Icon(Icons.edit),
@@ -388,7 +436,7 @@ class _ScanPrescriptionScreenState extends State<ScanPrescriptionScreen> {
               const SizedBox(height: 12),
               ElevatedButton(
                 onPressed: _confirmAndSave,
-                child: const Text('Confirm & save'),
+                child: Text(AppText.t('confirm_and_save', lang)),
               ),
             ],
           ],

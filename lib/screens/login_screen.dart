@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
+import '../services/settings_service.dart';
+import '../services/app_text.dart';
 import '../services/cloud_sync_service.dart';
 import 'signup_screen.dart';
 import 'forgot_password_screen.dart';
@@ -48,6 +51,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = context.watch<SettingsService>().languageCode;
     return Scaffold(
       body: SafeArea(
         child: Padding(
@@ -60,29 +64,29 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 40),
                   const Icon(Icons.favorite, size: 56, color: Color(0xFF5B7CFA)),
                   const SizedBox(height: 12),
-                  const Text('Welcome back',
+                  Text(AppText.t('welcome_back', lang),
                       textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
+                      style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 32),
                   TextField(
                     controller: _emailCtrl,
                     keyboardType: TextInputType.emailAddress,
-                    decoration: const InputDecoration(
-                        labelText: 'Email', border: OutlineInputBorder()),
+                    decoration: InputDecoration(
+                        labelText: AppText.t('email', lang), border: const OutlineInputBorder()),
                   ),
                   const SizedBox(height: 14),
                   TextField(
                     controller: _passwordCtrl,
                     obscureText: true,
-                    decoration: const InputDecoration(
-                        labelText: 'Password', border: OutlineInputBorder()),
+                    decoration: InputDecoration(
+                        labelText: AppText.t('password', lang), border: const OutlineInputBorder()),
                   ),
                   Align(
                     alignment: Alignment.centerRight,
                     child: TextButton(
                       onPressed: () => Navigator.push(context,
                           MaterialPageRoute(builder: (_) => const ForgotPasswordScreen())),
-                      child: const Text('Forgot password?'),
+                      child: Text(AppText.t('forgot_password_q', lang)),
                     ),
                   ),
                   if (_error != null) ...[
@@ -98,13 +102,13 @@ class _LoginScreenState extends State<LoginScreen> {
                             width: 20,
                             child: CircularProgressIndicator(
                                 strokeWidth: 2, color: Colors.white))
-                        : const Text('Log in'),
+                        : Text(AppText.t('log_in', lang)),
                   ),
                   const SizedBox(height: 12),
                   TextButton(
                     onPressed: () => Navigator.push(context,
                         MaterialPageRoute(builder: (_) => const SignupScreen())),
-                    child: const Text("Don't have an account? Sign up"),
+                    child: Text(AppText.t('no_account_signup', lang)),
                   ),
                 ],
               ),

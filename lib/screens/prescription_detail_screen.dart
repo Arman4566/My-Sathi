@@ -1,8 +1,11 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../models/prescription.dart';
 import '../services/database_service.dart';
 import 'chatbot_screen.dart';
+import '../services/settings_service.dart';
+import '../services/app_text.dart';
 
 class PrescriptionDetailScreen extends StatelessWidget {
   final Prescription prescription;
@@ -10,28 +13,28 @@ class PrescriptionDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final lang = context.watch<SettingsService>().languageCode;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Report details'),
+        title: Text(AppText.t('report_details', lang)),
         actions: [
           IconButton(
             icon: const Icon(Icons.delete_outline),
-            tooltip: 'Delete',
+            tooltip: AppText.t('delete', lang),
             onPressed: () async {
               final confirmed = await showDialog<bool>(
                 context: context,
                 builder: (ctx) => AlertDialog(
-                  title: const Text('Delete this report?'),
-                  content: const Text(
-                      'This removes it from your records. It won\'t affect any medicine reminders already saved.'),
+                  title: Text(AppText.t('delete_report_q', lang)),
+                  content: Text(AppText.t('delete_report_body', lang)),
                   actions: [
                     TextButton(
                         onPressed: () => Navigator.pop(ctx, false),
-                        child: const Text('Cancel')),
+                        child: Text(AppText.t('cancel', lang))),
                     TextButton(
                       onPressed: () => Navigator.pop(ctx, true),
-                      child: const Text('Delete',
-                          style: TextStyle(color: Colors.red)),
+                      child: Text(AppText.t('delete', lang),
+                          style: const TextStyle(color: Colors.red)),
                     ),
                   ],
                 ),
@@ -53,10 +56,10 @@ class PrescriptionDetailScreen extends StatelessWidget {
               child: Image.file(File(prescription.imagePath)),
             ),
           const SizedBox(height: 16),
-          Text('Scanned on '
-              '${prescription.dateAdded.day}/${prescription.dateAdded.month}/${prescription.dateAdded.year}'),
+          Text(AppText.t('scanned_on', lang).replaceFirst('{date}',
+              '${prescription.dateAdded.day}/${prescription.dateAdded.month}/${prescription.dateAdded.year}')),
           const SizedBox(height: 16),
-          const Text('Extracted text', style: TextStyle(fontWeight: FontWeight.bold)),
+          Text(AppText.t('extracted_text', lang), style: const TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 6),
           Container(
             width: double.infinity,
@@ -68,21 +71,21 @@ class PrescriptionDetailScreen extends StatelessWidget {
             ),
             child: Text(
               prescription.rawText.isEmpty
-                  ? '(no text detected)'
+                  ? AppText.t('no_text_detected', lang)
                   : prescription.rawText,
             ),
           ),
           const SizedBox(height: 20),
           ElevatedButton.icon(
             icon: const Icon(Icons.chat_bubble_outline),
-            label: const Text('Discuss this report with the assistant'),
+            label: Text(AppText.t('discuss_with_assistant', lang)),
             onPressed: () {
               Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (_) => ChatbotScreen(
-                    initialContextLabel:
-                        'Scanned report from ${prescription.dateAdded.day}/${prescription.dateAdded.month}/${prescription.dateAdded.year}',
+                    initialContextLabel: AppText.t('scanned_report_from', lang).replaceFirst('{date}',
+                        '${prescription.dateAdded.day}/${prescription.dateAdded.month}/${prescription.dateAdded.year}'),
                     initialContextText: prescription.rawText,
                   ),
                 ),

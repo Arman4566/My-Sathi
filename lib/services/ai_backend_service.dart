@@ -83,24 +83,33 @@ class AiBackendService {
   /// a medicine or appointment via the returned [ChatResponse.action].
   /// [reportContext] optionally carries the raw text of a specific
   /// scanned report the user opened this chat from.
+  /// [history] carries the recent turns of THIS conversation (oldest
+  /// first) so the assistant can follow up correctly — e.g. "make that
+  /// 9pm instead" only makes sense if it remembers what "that" refers to.
+  /// Without this, every message was answered with zero memory of
+  /// anything said earlier in the same chat.
   Future<ChatResponse> sendChatMessage({
     required String message,
+    List<Map<String, String>> history = const [],
     List<Map<String, dynamic>> medicines = const [],
     List<Map<String, dynamic>> appointments = const [],
     List<Map<String, dynamic>> reports = const [],
     Map<String, dynamic>? profile,
     String? reportContext,
+    String language = 'en',
   }) async {
     final res = await http.post(
       Uri.parse('$_baseUrl/api/chat'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
         'message': message,
+        'history': history,
         'medicines': medicines,
         'appointments': appointments,
         'reports': reports,
         'profile': profile,
         'reportContext': reportContext,
+        'language': language,
       }),
     );
 

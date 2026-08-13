@@ -194,6 +194,16 @@ class DatabaseService {
     return rows.map((r) => Medicine.fromMap(r)).toList();
   }
 
+  /// Used when a medicine's alarm rings, to reschedule its next
+  /// occurrence with up-to-date details (in case it was edited since the
+  /// alarm was originally set).
+  Future<Medicine?> getMedicineById(String id) async {
+    final db = await database;
+    final rows = await db.query('medicines', where: 'id = ?', whereArgs: [id]);
+    if (rows.isEmpty) return null;
+    return Medicine.fromMap(rows.first);
+  }
+
   Future<void> _deactivateExpiredMedicines() async {
     final db = await database;
     final nowIso = DateTime.now().toIso8601String();

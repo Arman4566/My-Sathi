@@ -1,10 +1,13 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import '../models/medicine.dart';
 import '../services/database_service.dart';
 import '../services/notification_service.dart';
+import '../services/settings_service.dart';
+import '../services/app_text.dart';
 
 const _weekdayLabels = {
   1: 'Mon',
@@ -43,19 +46,21 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
   }
 
   Future<void> _deleteMedicine(Medicine m) async {
+    final lang = context.read<SettingsService>().languageCode;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete medicine?'),
+        title: Text(AppText.t('delete_medicine_q', lang)),
         content: Text(
-            'This permanently removes "${m.name}" and its reminders. This cannot be undone.'),
+            AppText.t('delete_medicine_body', lang).replaceFirst('{name}', m.name)),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
+              child: Text(AppText.t('cancel', lang))),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+            child: Text(AppText.t('delete', lang),
+                style: const TextStyle(color: Colors.red)),
           ),
         ],
       ),
@@ -69,6 +74,7 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
 
   /// Shared dialog for adding a new medicine and editing an existing one.
   Future<void> _showMedicineDialog({Medicine? existing}) async {
+    final lang = context.read<SettingsService>().languageCode;
     final nameCtrl = TextEditingController(text: existing?.name ?? '');
     final dosageCtrl = TextEditingController(text: existing?.dosage ?? '');
     final instructionsCtrl =
@@ -88,7 +94,9 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setStateDialog) => AlertDialog(
-          title: Text(existing == null ? 'Add medicine' : 'Edit medicine'),
+          title: Text(existing == null
+              ? AppText.t('add_medicine', lang)
+              : AppText.t('edit_medicine', lang)),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -139,20 +147,20 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
                 const SizedBox(height: 14),
                 TextField(
                   controller: nameCtrl,
-                  decoration: const InputDecoration(labelText: 'Medicine name'),
+                  decoration: InputDecoration(labelText: AppText.t('medicine_name', lang)),
                 ),
                 TextField(
                   controller: dosageCtrl,
                   decoration:
-                      const InputDecoration(labelText: 'Dosage (e.g. 500mg)'),
+                      InputDecoration(labelText: AppText.t('dosage_hint', lang)),
                 ),
                 TextField(
                   controller: instructionsCtrl,
-                  decoration: const InputDecoration(
-                      labelText: 'Instructions (e.g. after food)'),
+                  decoration: InputDecoration(
+                      labelText: AppText.t('instructions_hint', lang)),
                 ),
                 const SizedBox(height: 14),
-                Text('Reminder times', style: Theme.of(ctx).textTheme.labelLarge),
+                Text(AppText.t('reminder_times', lang), style: Theme.of(ctx).textTheme.labelLarge),
                 const SizedBox(height: 6),
                 Wrap(
                   spacing: 8,
@@ -165,7 +173,7 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
                       ),
                     ActionChip(
                       avatar: const Icon(Icons.add, size: 18),
-                      label: const Text('Add time'),
+                      label: Text(AppText.t('add_time', lang)),
                       onPressed: () async {
                         final picked = await showTimePicker(
                             context: ctx, initialTime: TimeOfDay.now());
@@ -177,22 +185,22 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
                   ],
                 ),
                 const SizedBox(height: 14),
-                Text('Frequency', style: Theme.of(ctx).textTheme.labelLarge),
+                Text(AppText.t('frequency', lang), style: Theme.of(ctx).textTheme.labelLarge),
                 RadioGroup<MedicineFrequency>(
                   groupValue: frequency,
                   onChanged: (v) => setStateDialog(() => frequency = v!),
-                  child: const Column(
+                  child: Column(
                     children: [
                       RadioListTile<MedicineFrequency>(
                         contentPadding: EdgeInsets.zero,
                         dense: true,
-                        title: Text('Every day'),
+                        title: Text(AppText.t('every_day', lang)),
                         value: MedicineFrequency.daily,
                       ),
                       RadioListTile<MedicineFrequency>(
                         contentPadding: EdgeInsets.zero,
                         dense: true,
-                        title: Text('Custom days'),
+                        title: Text(AppText.t('custom_days', lang)),
                         value: MedicineFrequency.custom,
                       ),
                     ],
@@ -217,7 +225,7 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
                     ],
                   ),
                 const SizedBox(height: 14),
-                Text('Stop after (optional)',
+                Text(AppText.t('stop_after_optional', lang),
                     style: Theme.of(ctx).textTheme.labelLarge),
                 const SizedBox(height: 6),
                 Row(
@@ -225,7 +233,7 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
                     TextButton.icon(
                       icon: const Icon(Icons.event),
                       label: Text(endDate == null
-                          ? 'No end date — ongoing'
+                          ? AppText.t('no_end_date', lang)
                           : '${endDate!.day}/${endDate!.month}/${endDate!.year}'),
                       onPressed: () async {
                         final picked = await showDatePicker(
@@ -245,8 +253,7 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
                   ],
                 ),
                 Text(
-                  'When an end date passes, this medicine is automatically '
-                  'stopped and its reminders removed.',
+                  AppText.t('end_date_note', lang),
                   style: TextStyle(color: Theme.of(ctx).hintColor, fontSize: 12),
                 ),
               ],
@@ -254,7 +261,7 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
           ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                onPressed: () => Navigator.pop(ctx), child: Text(AppText.t('cancel', lang))),
             ElevatedButton(
               onPressed: () async {
                 if (nameCtrl.text.trim().isEmpty || times.isEmpty) return;
@@ -291,7 +298,7 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
                 } catch (e) {
                   if (ctx.mounted) {
                     ScaffoldMessenger.of(ctx).showSnackBar(
-                        SnackBar(content: Text('Could not save: $e')));
+                        SnackBar(content: Text(AppText.t('could_not_save', lang).replaceFirst('{error}', '$e'))));
                   }
                   return; // don't close the dialog if the save itself failed
                 }
@@ -312,16 +319,14 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
                       .scheduleMedicineReminders(medicine);
                 } catch (e) {
                   if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                      content: Text(
-                          'Saved, but reminders could not be scheduled. '
-                          'Check notification/alarm permissions in phone settings.'),
-                      duration: Duration(seconds: 5),
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text(AppText.t('saved_reminders_failed', lang)),
+                      duration: const Duration(seconds: 5),
                     ));
                   }
                 }
               },
-              child: const Text('Save'),
+              child: Text(AppText.t('save', lang)),
             ),
           ],
         ),
@@ -331,20 +336,23 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = context.watch<SettingsService>().languageCode;
     return Scaffold(
-      appBar: AppBar(title: const Text('My medicines')),
+      appBar: AppBar(title: Text(AppText.t('my_medicines', lang))),
       body: _medicines.isEmpty
-          ? const Center(child: Text('No active medicines'))
+          ? Center(child: Text(AppText.t('no_active_medicines', lang)))
           : ListView.builder(
               padding: const EdgeInsets.all(12),
               itemCount: _medicines.length,
               itemBuilder: (context, i) {
                 final m = _medicines[i];
                 final freqLabel = m.frequency == MedicineFrequency.daily
-                    ? 'Every day'
-                    : 'On ${m.customDays.map((d) => _weekdayLabels[d]).join(", ")}';
+                    ? AppText.t('every_day', lang)
+                    : AppText.t('on_days', lang).replaceFirst('{days}',
+                        m.customDays.map((d) => _weekdayLabels[d]).join(", "));
                 final endLabel = m.endDate != null
-                    ? ' • until ${m.endDate!.day}/${m.endDate!.month}/${m.endDate!.year}'
+                    ? AppText.t('until_date', lang).replaceFirst('{date}',
+                        '${m.endDate!.day}/${m.endDate!.month}/${m.endDate!.year}')
                     : '';
 
                 return Card(
@@ -366,18 +374,18 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
                       children: [
                         IconButton(
                           icon: const Icon(Icons.edit, size: 20),
-                          tooltip: 'Edit',
+                          tooltip: AppText.t('edit', lang),
                           onPressed: () => _showMedicineDialog(existing: m),
                         ),
                         IconButton(
                           icon: const Icon(Icons.stop_circle_outlined, size: 20),
-                          tooltip: 'Stop (keep in history)',
+                          tooltip: AppText.t('stop_keep_history', lang),
                           onPressed: () => _stopMedicine(m),
                         ),
                         IconButton(
                           icon: const Icon(Icons.delete_outline,
                               size: 20, color: Colors.redAccent),
-                          tooltip: 'Delete permanently',
+                          tooltip: AppText.t('delete_permanently', lang),
                           onPressed: () => _deleteMedicine(m),
                         ),
                       ],
@@ -389,7 +397,7 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showMedicineDialog(),
         icon: const Icon(Icons.add),
-        label: const Text('Add medicine'),
+        label: Text(AppText.t('add_medicine', lang)),
       ),
     );
   }

@@ -1,8 +1,11 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../models/medical_report.dart';
 import '../services/database_service.dart';
 import 'chatbot_screen.dart';
+import '../services/settings_service.dart';
+import '../services/app_text.dart';
 
 class ReportDetailScreen extends StatelessWidget {
   final MedicalReport report;
@@ -10,6 +13,7 @@ class ReportDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final lang = context.watch<SettingsService>().languageCode;
     return Scaffold(
       appBar: AppBar(
         title: Text(report.title),
@@ -20,15 +24,15 @@ class ReportDetailScreen extends StatelessWidget {
               final confirmed = await showDialog<bool>(
                 context: context,
                 builder: (ctx) => AlertDialog(
-                  title: const Text('Delete this report?'),
+                  title: Text(AppText.t('delete_report_q', lang)),
                   actions: [
                     TextButton(
                         onPressed: () => Navigator.pop(ctx, false),
-                        child: const Text('Cancel')),
+                        child: Text(AppText.t('cancel', lang))),
                     TextButton(
                       onPressed: () => Navigator.pop(ctx, true),
                       child:
-                          const Text('Delete', style: TextStyle(color: Colors.red)),
+                          Text(AppText.t('delete', lang), style: const TextStyle(color: Colors.red)),
                     ),
                   ],
                 ),
@@ -50,11 +54,11 @@ class ReportDetailScreen extends StatelessWidget {
               child: Image.file(File(report.filePath)),
             ),
           const SizedBox(height: 16),
-          Text(
-              'Uploaded ${report.uploadedDate.day}/${report.uploadedDate.month}/${report.uploadedDate.year}'),
+          Text(AppText.t('uploaded_on', lang).replaceFirst('{date}',
+              '${report.uploadedDate.day}/${report.uploadedDate.month}/${report.uploadedDate.year}')),
           const SizedBox(height: 16),
           if (report.summary.isNotEmpty) ...[
-            const Text('AI summary', style: TextStyle(fontWeight: FontWeight.bold)),
+            Text(AppText.t('ai_summary', lang), style: const TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 6),
             Container(
               width: double.infinity,
@@ -67,7 +71,7 @@ class ReportDetailScreen extends StatelessWidget {
             ),
             const SizedBox(height: 16),
           ],
-          const Text('Extracted text', style: TextStyle(fontWeight: FontWeight.bold)),
+          Text(AppText.t('extracted_text', lang), style: const TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 6),
           Container(
             width: double.infinity,
@@ -77,12 +81,12 @@ class ReportDetailScreen extends StatelessWidget {
               borderRadius: BorderRadius.circular(10),
               border: Border.all(color: Theme.of(context).dividerColor),
             ),
-            child: Text(report.rawText.isEmpty ? '(no text detected)' : report.rawText),
+            child: Text(report.rawText.isEmpty ? AppText.t('no_text_detected', lang) : report.rawText),
           ),
           const SizedBox(height: 20),
           ElevatedButton.icon(
             icon: const Icon(Icons.chat_bubble_outline),
-            label: const Text('Discuss this report with the assistant'),
+            label: Text(AppText.t('discuss_with_assistant', lang)),
             onPressed: () {
               Navigator.push(
                 context,

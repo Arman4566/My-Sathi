@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'dart:async';
 import '../models/user_profile.dart';
 import '../services/auth_service.dart';
 import '../services/cloud_sync_service.dart';
+import '../services/settings_service.dart';
+import '../services/app_text.dart';
 import 'home_screen.dart';
 import 'login_screen.dart';
 
@@ -58,6 +61,7 @@ class _SplashScreenState extends State<SplashScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = context.watch<SettingsService>().languageCode;
     return Scaffold(
       body: Container(
         width: double.infinity,
@@ -90,7 +94,7 @@ class _SplashScreenState extends State<SplashScreen> {
                       fontWeight: FontWeight.bold,
                       color: Colors.white)),
               const SizedBox(height: 6),
-              Text('Your health companion',
+              Text(AppText.t('health_companion_tagline', lang),
                   style: TextStyle(color: Colors.white.withValues(alpha: 0.85))),
               const Spacer(flex: 3),
               const SizedBox(

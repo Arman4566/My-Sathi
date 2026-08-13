@@ -89,7 +89,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     Text(AppText.t('health_summary', lang),
                         style: TextStyle(color: theme.hintColor)),
                     const SizedBox(height: 24),
-                    if (nextAppt != null) _nextAppointmentCard(nextAppt),
+                    if (nextAppt != null) _nextAppointmentCard(nextAppt, lang),
                     const SizedBox(height: 20),
                     Text(AppText.t('todays_medicines', lang),
                         style: const TextStyle(
@@ -114,7 +114,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _nextAppointmentCard(Appointment a) {
+  Widget _nextAppointmentCard(Appointment a, String lang) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -130,8 +130,8 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Upcoming appointment',
-                    style: TextStyle(color: Colors.white70, fontSize: 12)),
+                Text(AppText.t('upcoming_appointment', lang),
+                    style: const TextStyle(color: Colors.white70, fontSize: 12)),
                 Text('Dr. ${a.doctorName}',
                     style: const TextStyle(
                         color: Colors.white,
@@ -254,7 +254,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: _actionButton(
                 context,
                 icon: Icons.description_outlined,
-                label: 'Prescriptions',
+                label: AppText.t('prescriptions', lang),
                 onTap: () => Navigator.push(
                     context,
                     MaterialPageRoute(

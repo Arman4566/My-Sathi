@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../models/medical_report.dart';
 import '../services/database_service.dart';
 import 'report_upload_screen.dart';
 import 'report_detail_screen.dart';
+import '../services/settings_service.dart';
+import '../services/app_text.dart';
 
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
@@ -26,12 +29,13 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = context.watch<SettingsService>().languageCode;
     return Scaffold(
-      appBar: AppBar(title: const Text('My reports')),
+      appBar: AppBar(title: Text(AppText.t('my_reports', lang))),
       body: _reports.isEmpty
           ? Center(
               child: Text(
-                'No reports uploaded yet.\nTap + to add a lab report or document.',
+                AppText.t('no_reports', lang),
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Theme.of(context).hintColor),
               ),
@@ -48,7 +52,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                     title: Text(r.title),
                     subtitle: Text(
                         '${r.uploadedDate.day}/${r.uploadedDate.month}/${r.uploadedDate.year}'
-                        '${r.summary.isNotEmpty ? " • summarized" : ""}'),
+                        '${r.summary.isNotEmpty ? AppText.t("summarized_suffix", lang) : ""}'),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () async {
                       await Navigator.push(

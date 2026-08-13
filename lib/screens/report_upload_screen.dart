@@ -1,11 +1,14 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import '../models/medical_report.dart';
 import '../services/database_service.dart';
 import '../services/ocr_service.dart';
 import '../services/ai_backend_service.dart';
+import '../services/settings_service.dart';
+import '../services/app_text.dart';
 
 class ReportUploadScreen extends StatefulWidget {
   const ReportUploadScreen({super.key});
@@ -25,6 +28,7 @@ class _ReportUploadScreenState extends State<ReportUploadScreen> {
   String? _error;
 
   Future<void> _pickImage(ImageSource source) async {
+    final lang = context.read<SettingsService>().languageCode;
     final picked = await _picker.pickImage(source: source, imageQuality: 85);
     if (picked == null) return;
 
@@ -47,12 +51,11 @@ class _ReportUploadScreenState extends State<ReportUploadScreen> {
         _rawText = raw;
         _summary = summary;
         if (summary == null) {
-          _error =
-              "Couldn't generate an AI summary right now (backend may not be reachable), but the report itself has been read and can still be saved.";
+          _error = AppText.t('summary_unavailable', lang);
         }
       });
     } catch (e) {
-      setState(() => _error = 'Could not read text from this photo.');
+      setState(() => _error = AppText.t('could_not_read_photo_text', lang));
     } finally {
       setState(() => _loading = false);
     }
@@ -60,10 +63,12 @@ class _ReportUploadScreenState extends State<ReportUploadScreen> {
 
   Future<void> _save() async {
     if (_image == null) return;
+    final lang = context.read<SettingsService>().languageCode;
     final report = MedicalReport(
       id: const Uuid().v4(),
       title: _titleCtrl.text.trim().isEmpty
-          ? 'Report — ${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year}'
+          ? AppText.t('report_dated_title', lang).replaceFirst('{date}',
+              '${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year}')
           : _titleCtrl.text.trim(),
       filePath: _image!.path,
       rawText: _rawText,
@@ -82,17 +87,18 @@ class _ReportUploadScreenState extends State<ReportUploadScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = context.watch<SettingsService>().languageCode;
     return Scaffold(
-      appBar: AppBar(title: const Text('Upload report')),
+      appBar: AppBar(title: Text(AppText.t('upload_report', lang))),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: ListView(
           children: [
             TextField(
               controller: _titleCtrl,
-              decoration: const InputDecoration(
-                  labelText: 'Title (e.g. "Blood test — June")',
-                  border: OutlineInputBorder()),
+              decoration: InputDecoration(
+                  labelText: AppText.t('title_hint', lang),
+                  border: const OutlineInputBorder()),
             ),
             const SizedBox(height: 16),
             if (_image != null)
@@ -107,7 +113,7 @@ class _ReportUploadScreenState extends State<ReportUploadScreen> {
                   child: ElevatedButton.icon(
                     onPressed: () => _pickImage(ImageSource.camera),
                     icon: const Icon(Icons.camera_alt),
-                    label: const Text('Take photo'),
+                    label: Text(AppText.t('take_photo', lang)),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -115,7 +121,7 @@ class _ReportUploadScreenState extends State<ReportUploadScreen> {
                   child: OutlinedButton.icon(
                     onPressed: () => _pickImage(ImageSource.gallery),
                     icon: const Icon(Icons.photo_library),
-                    label: const Text('From gallery'),
+                    label: Text(AppText.t('from_gallery', lang)),
                   ),
                 ),
               ],
@@ -128,7 +134,7 @@ class _ReportUploadScreenState extends State<ReportUploadScreen> {
                 child: Text(_error!, style: const TextStyle(color: Colors.orange)),
               ),
             if (_summary != null) ...[
-              const Text('AI summary', style: TextStyle(fontWeight: FontWeight.bold)),
+              Text(AppText.t('ai_summary', lang), style: const TextStyle(fontWeight: FontWeight.bold)),
               const SizedBox(height: 6),
               Container(
                 width: double.infinity,
@@ -141,14 +147,13 @@ class _ReportUploadScreenState extends State<ReportUploadScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'This is a plain-language summary, not a diagnosis. Discuss anything '
-                'flagged as unusual with your doctor.',
+                AppText.t('summary_disclaimer', lang),
                 style: TextStyle(color: Theme.of(context).hintColor, fontSize: 12),
               ),
             ],
             if (_image != null) ...[
               const SizedBox(height: 20),
-              ElevatedButton(onPressed: _save, child: const Text('Save report')),
+              ElevatedButton(onPressed: _save, child: Text(AppText.t('save_report', lang))),
             ],
           ],
         ),

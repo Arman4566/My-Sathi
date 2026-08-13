@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
+import '../services/settings_service.dart';
+import '../services/app_text.dart';
 import 'home_screen.dart';
 
 class SignupScreen extends StatefulWidget {
@@ -20,7 +23,7 @@ class _SignupScreenState extends State<SignupScreen> {
         _emailCtrl.text.trim().isEmpty ||
         _passwordCtrl.text.length < 4) {
       setState(() =>
-          _error = 'Please fill in all fields (password: at least 4 characters).');
+          _error = AppText.t('please_fill_fields', context.read<SettingsService>().languageCode));
       return;
     }
 
@@ -50,8 +53,9 @@ class _SignupScreenState extends State<SignupScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = context.watch<SettingsService>().languageCode;
     return Scaffold(
-      appBar: AppBar(title: const Text('Create account')),
+      appBar: AppBar(title: Text(AppText.t('create_account', lang))),
       body: Padding(
         padding: const EdgeInsets.all(24),
         child: SingleChildScrollView(
@@ -60,22 +64,22 @@ class _SignupScreenState extends State<SignupScreen> {
             children: [
               TextField(
                 controller: _nameCtrl,
-                decoration: const InputDecoration(
-                    labelText: 'Name', border: OutlineInputBorder()),
+                decoration: InputDecoration(
+                    labelText: AppText.t('name', lang), border: const OutlineInputBorder()),
               ),
               const SizedBox(height: 14),
               TextField(
                 controller: _emailCtrl,
                 keyboardType: TextInputType.emailAddress,
-                decoration: const InputDecoration(
-                    labelText: 'Email', border: OutlineInputBorder()),
+                decoration: InputDecoration(
+                    labelText: AppText.t('email', lang), border: const OutlineInputBorder()),
               ),
               const SizedBox(height: 14),
               TextField(
                 controller: _passwordCtrl,
                 obscureText: true,
-                decoration: const InputDecoration(
-                    labelText: 'Password', border: OutlineInputBorder()),
+                decoration: InputDecoration(
+                    labelText: AppText.t('password', lang), border: const OutlineInputBorder()),
               ),
               if (_error != null) ...[
                 const SizedBox(height: 12),
@@ -90,13 +94,11 @@ class _SignupScreenState extends State<SignupScreen> {
                         width: 20,
                         child: CircularProgressIndicator(
                             strokeWidth: 2, color: Colors.white))
-                    : const Text('Sign up'),
+                    : Text(AppText.t('sign_up', lang)),
               ),
               const SizedBox(height: 12),
               Text(
-                'Your account is saved securely to your account server, so you '
-                'can log in from another device and recover your password if '
-                'you forget it.',
+                AppText.t('account_saved_note', lang),
                 style: TextStyle(color: Theme.of(context).hintColor, fontSize: 12),
                 textAlign: TextAlign.center,
               ),

@@ -95,6 +95,33 @@ CREATE TABLE IF NOT EXISTS medical_reports (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- AI-placed phone calls to a doctor's office to book/confirm an
+-- appointment. See appointment_calls.js for the full flow — Twilio
+-- rings doctor_phone, and each thing the receptionist says comes back
+-- as a webhook turn that Gemini responds to, building up `transcript`
+-- turn by turn until an outcome is reached.
+CREATE TABLE IF NOT EXISTS appointment_calls (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  doctor_name TEXT,
+  doctor_phone TEXT NOT NULL,
+  requested_date TEXT,
+  requested_time TEXT,
+  patient_name TEXT,
+  notes TEXT DEFAULT '',
+  -- queued -> ringing/in_progress -> completed | no_answer | busy | failed | canceled
+  status TEXT DEFAULT 'queued',
+  -- set once completed: confirmed | declined | needs_followup | unclear
+  outcome TEXT,
+  outcome_summary TEXT,
+  confirmed_date_time TIMESTAMPTZ,
+  transcript JSONB DEFAULT '[]',
+  turn_count INTEGER DEFAULT 0,
+  twilio_call_sid TEXT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS health_records (
   id UUID PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import '../models/health_record.dart';
 import '../services/database_service.dart';
+import '../services/settings_service.dart';
+import '../services/app_text.dart';
 
 class HealthScreen extends StatefulWidget {
   const HealthScreen({super.key});
@@ -24,6 +27,7 @@ class _HealthScreenState extends State<HealthScreen> {
   }
 
   Future<void> _addRecord() async {
+    final lang = context.read<SettingsService>().languageCode;
     final weightCtrl = TextEditingController();
     final bpCtrl = TextEditingController();
     final sugarCtrl = TextEditingController();
@@ -32,7 +36,7 @@ class _HealthScreenState extends State<HealthScreen> {
     await showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Log current health'),
+        title: Text(AppText.t('log_current_health', lang)),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -40,30 +44,30 @@ class _HealthScreenState extends State<HealthScreen> {
               TextField(
                 controller: weightCtrl,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(labelText: 'Weight (kg)'),
+                decoration: InputDecoration(labelText: AppText.t('weight_kg_hint', lang)),
               ),
               TextField(
                 controller: bpCtrl,
                 decoration:
-                    const InputDecoration(labelText: 'Blood pressure (e.g. 120/80)'),
+                    InputDecoration(labelText: AppText.t('blood_pressure_hint', lang)),
               ),
               TextField(
                 controller: sugarCtrl,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(labelText: 'Blood sugar (mg/dL)'),
+                decoration: InputDecoration(labelText: AppText.t('blood_sugar_hint', lang)),
               ),
               TextField(
                 controller: notesCtrl,
                 maxLines: 3,
-                decoration: const InputDecoration(
-                    labelText: 'How are you feeling? (notes)'),
+                decoration: InputDecoration(
+                    labelText: AppText.t('feeling_notes_hint', lang)),
               ),
             ],
           ),
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+              onPressed: () => Navigator.pop(ctx), child: Text(AppText.t('cancel', lang))),
           ElevatedButton(
             onPressed: () async {
               final record = HealthRecord(
@@ -78,7 +82,7 @@ class _HealthScreenState extends State<HealthScreen> {
               if (ctx.mounted) Navigator.pop(ctx);
               _load();
             },
-            child: const Text('Save'),
+            child: Text(AppText.t('save', lang)),
           ),
         ],
       ),
@@ -87,11 +91,12 @@ class _HealthScreenState extends State<HealthScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = context.watch<SettingsService>().languageCode;
     return Scaffold(
-      appBar: AppBar(title: const Text('My health')),
+      appBar: AppBar(title: Text(AppText.t('my_health', lang))),
       body: _records.isEmpty
           ? Center(
-              child: Text('No health records yet.\nTap + to log how you feel today.',
+              child: Text(AppText.t('no_health_records', lang),
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Theme.of(context).hintColor)))
           : ListView.builder(
@@ -101,14 +106,19 @@ class _HealthScreenState extends State<HealthScreen> {
                 final r = _records[i];
                 final parts = <String>[];
                 if (r.weightKg != null) parts.add('${r.weightKg} kg');
-                if (r.bloodPressure != null) parts.add('BP ${r.bloodPressure}');
-                if (r.sugarLevel != null) parts.add('Sugar ${r.sugarLevel} mg/dL');
+                if (r.bloodPressure != null) {
+                  parts.add(AppText.t('bp_label', lang).replaceFirst('{value}', r.bloodPressure!));
+                }
+                if (r.sugarLevel != null) {
+                  parts.add(AppText.t('sugar_label', lang)
+                      .replaceFirst('{value}', r.sugarLevel.toString()));
+                }
 
                 return Card(
                   child: ListTile(
                     leading: const Icon(Icons.monitor_heart_outlined,
                         color: Color(0xFF5B7CFA)),
-                    title: Text(parts.isEmpty ? 'Health note' : parts.join(' • ')),
+                    title: Text(parts.isEmpty ? AppText.t('health_note', lang) : parts.join(' • ')),
                     subtitle: Text(
                         '${r.date.day}/${r.date.month}/${r.date.year}'
                         '${r.notes.isNotEmpty ? '\n${r.notes}' : ''}'),
