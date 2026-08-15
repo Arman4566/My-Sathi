@@ -120,6 +120,7 @@ Sync failures (offline, backend not deployed yet) never block the app —
 local writes always succeed first; the cloud push happens in the
 background and is simply skipped if it can't reach the backend that time.
 
+## ⚠️ Before the chatbot or AI-powered features will work
 
 Prescription/report scanning and the chatbot need an LLM (Google Gemini),
 which lives in `backend/server.js` — never inside the app. Until deployed:

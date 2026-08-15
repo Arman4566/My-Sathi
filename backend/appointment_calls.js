@@ -72,7 +72,7 @@ router.get('/', async (req, res) => {
     res.json({ calls: result.rows.map(toJson) });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'fetch_failed' });
+    res.status(500).json({ error: 'fetch_failed', message: err.message });
   }
 });
 
@@ -86,7 +86,7 @@ router.get('/:id', async (req, res) => {
     res.json({ call: toJson(result.rows[0]) });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'fetch_failed' });
+    res.status(500).json({ error: 'fetch_failed', message: err.message });
   }
 });
 
@@ -142,7 +142,20 @@ router.post('/', async (req, res) => {
     res.json({ call: toJson({ ...call, status: 'ringing' }) });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'create_failed' });
+    // Common cause: schema.sql wasn't re-run after this feature was added,
+    // so the appointment_calls table doesn't exist yet (Postgres error
+    // code 42P01 = undefined_table). Surface that plainly instead of a
+    // bare "create_failed" the app can't do anything useful with.
+    if (err.code === '42P01') {
+      return res.status(500).json({
+        error: 'missing_table',
+        message:
+          'The appointment_calls table doesn\'t exist yet. Re-run schema.sql ' +
+          'against your database (see README \u2192 "Setting up the AI phone-call ' +
+          'booking feature").',
+      });
+    }
+    res.status(500).json({ error: 'create_failed', message: err.message });
   }
 });
 
@@ -172,7 +185,7 @@ router.delete('/:id', async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'cancel_failed' });
+    res.status(500).json({ error: 'cancel_failed', message: err.message });
   }
 });
 

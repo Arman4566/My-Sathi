@@ -21,7 +21,7 @@ const { router: appointmentCallsRouter, twilioWebhookRouter } = require('./appoi
 // successfully save a medicine or appointment through chat.
 // The client + retry/fallback logic now lives in ai.js so the
 // appointment-call feature (appointment_calls.js) can reuse it too.
-const { generateWithRetry, isOverloadedError } = require('./ai');
+const { generateWithRetry, isOverloadedError, PRIMARY_MODEL } = require('./ai');
 
 const app = express();
 app.use(cors());
