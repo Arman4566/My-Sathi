@@ -27,7 +27,7 @@ const express = require('express');
 const twilio = require('twilio');
 const { requireAuth } = require('./auth');
 const pool = require('./db');
-const { generateWithRetry, isOverloadedError } = require('./ai');
+const { generateWithRetry, isOverloadedError, PRIMARY_MODEL } = require('./ai');
 
 const MAX_TURNS = 14; // hard cap so a stuck call can't loop forever / run up cost
 
@@ -260,7 +260,7 @@ async function nextTurn(call, transcript) {
 
   try {
     const response = await generateWithRetry({
-      model: 'gemini-2.5-flash',
+      model: PRIMARY_MODEL,
       contents: [{
         role: 'user',
         parts: [{

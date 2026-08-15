@@ -100,6 +100,11 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
 
+    // Read this before any `await` below — using `context` after an async
+    // gap is unsafe if the widget gets unmounted mid-request (analyzer
+    // flags this correctly), so grab what we need from it up front.
+    final languageCode = context.read<SettingsService>().languageCode;
+
     setState(() {
       _messages.add(_ChatMessage(text, true));
       _sending = true;
@@ -161,7 +166,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                 'gender': profile.gender,
               },
         reportContext: widget.initialContextText,
-        language: context.read<SettingsService>().languageCode,
+        language: languageCode,
       );
 
       // Safety net: even though the backend is instructed not to use

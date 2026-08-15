@@ -9,8 +9,15 @@ require('dotenv').config();
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-const PRIMARY_MODEL = 'gemini-2.5-flash';
-const FALLBACK_MODEL = 'gemini-2.0-flash';
+const PRIMARY_MODEL = 'gemini-3.6-flash';
+const FALLBACK_MODEL = 'gemini-3.1-flash-lite';
+// NOTE: Google periodically retires older Gemini model IDs (this app has
+// already hit that once — see server.js's history). If either of these
+// starts 404ing with "no longer available", check
+// https://ai.google.dev/gemini-api/docs/models for current stable model
+// IDs and update both constants here — every other file imports these
+// from ai.js rather than hardcoding a model name, so this is the only
+// place that ever needs to change.
 
 function isOverloadedError(err) {
   return (

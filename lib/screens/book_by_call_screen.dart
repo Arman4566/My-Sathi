@@ -211,7 +211,7 @@ class _BookByCallScreenState extends State<BookByCallScreen> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.blue.withOpacity(0.08),
+                color: Colors.blue.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: const Text(
@@ -349,8 +349,8 @@ class _BookByCallScreenState extends State<BookByCallScreen> {
                         constraints: const BoxConstraints(maxWidth: 320),
                         decoration: BoxDecoration(
                           color: t.role == 'assistant'
-                              ? const Color(0xFF5B7CFA).withOpacity(0.12)
-                              : Colors.grey.withOpacity(0.15),
+                              ? const Color(0xFF5B7CFA).withValues(alpha: 0.12)
+                              : Colors.grey.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(t.text, style: const TextStyle(fontSize: 13)),
