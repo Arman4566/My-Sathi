@@ -112,4 +112,50 @@ class AppointmentCallService {
       throw Exception(_extractErrorMessage(res, 'Could not cancel the call.'));
     }
   }
+
+  /// Starts a Twilio-free simulated call: same Gemini conversation logic
+  /// as a real one, but no phone ever rings. Returns the call with the
+  /// assistant's opening line already in the transcript.
+  Future<AppointmentCall> startSimulatedCall({
+    required String requestedDate,
+    required String requestedTime,
+    String? doctorName,
+    String? patientName,
+    String notes = '',
+  }) async {
+    final headers = await _authHeaders();
+    final res = await http.post(
+      Uri.parse('$_baseUrl/api/appointment-calls/simulate'),
+      headers: headers,
+      body: jsonEncode({
+        'requestedDate': requestedDate,
+        'requestedTime': requestedTime,
+        'doctorName': doctorName,
+        'patientName': patientName,
+        'notes': notes,
+      }),
+    );
+    if (res.statusCode != 200) {
+      throw Exception(
+          _extractErrorMessage(res, 'Could not start the simulation (${res.statusCode}).'));
+    }
+    final data = jsonDecode(res.body) as Map<String, dynamic>;
+    return AppointmentCall.fromJson(data['call'] as Map<String, dynamic>);
+  }
+
+  /// Sends the next line of a simulated call (you playing the role of
+  /// whoever answered) and returns the assistant's reply already appended.
+  Future<AppointmentCall> sendSimulatedReply(String id, String text) async {
+    final headers = await _authHeaders();
+    final res = await http.post(
+      Uri.parse('$_baseUrl/api/appointment-calls/$id/simulate-reply'),
+      headers: headers,
+      body: jsonEncode({'text': text}),
+    );
+    if (res.statusCode != 200) {
+      throw Exception(_extractErrorMessage(res, 'Could not send that reply.'));
+    }
+    final data = jsonDecode(res.body) as Map<String, dynamic>;
+    return AppointmentCall.fromJson(data['call'] as Map<String, dynamic>);
+  }
 }

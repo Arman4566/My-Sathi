@@ -207,6 +207,26 @@ patient's medicines, reports, or other health details to whoever
 answers — only their name, the requested slot, and a callback number if
 asked.
 
+### Simulation mode (no Twilio account needed)
+
+Every voice-calling API we checked (Twilio, Vonage, Bandwidth, Plivo,
+Vapi, Bland.ai) charges per minute for real calls from the first call —
+none of them are free for calling an arbitrary real phone number, and
+trial credits everywhere restrict you to manually-verified numbers.
+There's no way around that cost.
+
+So if Twilio isn't set up yet (or its trial account is too restricted),
+tap **"Simulate call instead"** on the Book-by-Call screen instead of
+"Call to book." It runs the exact same Gemini conversation logic —
+same system prompt, same rules about never sharing medical details —
+but instead of a real phone ringing, you type the office's replies
+yourself in a text box, and the AI responds turn by turn. Simulated
+calls are clearly labeled in the UI (an amber "Simulated — no real call
+was placed" badge) so they're never mistaken for a real one. This is
+genuinely free and works with zero telephony setup — good for demos and
+for testing the AI's conversational behavior before paying for real
+calling minutes.
+
 
 
 Without `EMAIL_USER`/`EMAIL_PASS` set, reset codes just print to your
@@ -234,7 +254,9 @@ number plus a requested date/time, and the AI places a real call
 answers, and reports back whether the slot was confirmed. A confirmed
 call can be saved straight into your appointments list. Needs the
 Twilio setup above — until then it tells you clearly, rather than
-pretending to call.
+pretending to call. No telephony account? Use "Simulate call instead"
+on the same screen to try the identical AI conversation for free, with
+you typing the office's replies (see Simulation mode above).
 
 ### Profile
 WhatsApp-style layout: avatar (tap the camera badge to change it), and

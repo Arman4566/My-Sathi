@@ -122,6 +122,12 @@ CREATE TABLE IF NOT EXISTS appointment_calls (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- True for calls run through the Twilio-free simulation mode (used when
+-- Twilio isn't set up, or its trial account is too restricted to place a
+-- real call) instead of an actual phone call. Added after the table
+-- above already existed for some deployments, hence IF NOT EXISTS.
+ALTER TABLE appointment_calls ADD COLUMN IF NOT EXISTS is_simulated BOOLEAN DEFAULT false;
+
 CREATE TABLE IF NOT EXISTS health_records (
   id UUID PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,

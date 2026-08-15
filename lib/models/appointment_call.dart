@@ -32,6 +32,7 @@ class AppointmentCall {
   final String? outcomeSummary;
   final DateTime? confirmedDateTime;
   final List<CallTranscriptTurn> transcript;
+  final bool isSimulated;
   final DateTime createdAt;
 
   AppointmentCall({
@@ -47,6 +48,7 @@ class AppointmentCall {
     this.outcomeSummary,
     this.confirmedDateTime,
     this.transcript = const [],
+    this.isSimulated = false,
     required this.createdAt,
   });
 
@@ -71,6 +73,7 @@ class AppointmentCall {
       transcript: ((json['transcript'] as List?) ?? [])
           .map((t) => CallTranscriptTurn.fromJson(t as Map<String, dynamic>))
           .toList(),
+      isSimulated: (json['isSimulated'] as bool?) ?? false,
       createdAt: DateTime.parse(json['createdAt'] as String),
     );
   }

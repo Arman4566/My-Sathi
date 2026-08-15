@@ -11,11 +11,19 @@ import '../services/database_service.dart';
 /// date/time, then has the AI place the call and negotiate/confirm the
 /// slot. Polls the backend for status while the call is live.
 ///
-/// IMPORTANT, shown to the user in-screen too: this places a REAL phone
-/// call through a telephony provider (Twilio) configured on the backend.
-/// It only works once that's set up (see backend/.env.example), and
-/// every call has a small real-world cost — there's no free way to call
-/// an arbitrary phone number.
+/// Also supports a Twilio-free SIMULATION mode ("Simulate call instead")
+/// that runs the identical Gemini conversation logic but lets the
+/// patient type the office's replies instead of a real phone ringing —
+/// useful when no telephony account is configured, or its trial is too
+/// restricted to place a real call. Simulated calls are clearly labeled
+/// in the UI and never presented as if a real call happened.
+///
+/// IMPORTANT, shown to the user in-screen too: "Call to book" places a
+/// REAL phone call through a telephony provider (Twilio) configured on
+/// the backend. It only works once that's set up (see
+/// backend/.env.example), and every call has a small real-world cost —
+/// there's no free way to call an arbitrary phone number with any
+/// provider (checked; none of them offer that for free).
 class BookByCallScreen extends StatefulWidget {
   const BookByCallScreen({super.key});
   @override
@@ -26,10 +34,12 @@ class _BookByCallScreenState extends State<BookByCallScreen> {
   final _doctorNameCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
+  final _simReplyCtrl = TextEditingController();
   DateTime? _pickedDate;
   TimeOfDay? _pickedTime;
 
   bool _starting = false;
+  bool _sendingReply = false;
   String? _error;
   AppointmentCall? _call;
   Timer? _pollTimer;
@@ -41,6 +51,7 @@ class _BookByCallScreenState extends State<BookByCallScreen> {
     _doctorNameCtrl.dispose();
     _phoneCtrl.dispose();
     _notesCtrl.dispose();
+    _simReplyCtrl.dispose();
     super.dispose();
   }
 
@@ -101,6 +112,48 @@ class _BookByCallScreenState extends State<BookByCallScreen> {
     }
   }
 
+  Future<void> _startSimulatedCall() async {
+    if (_pickedDate == null || _pickedTime == null) {
+      setState(() => _error = 'Please pick a date and time first.');
+      return;
+    }
+    setState(() {
+      _starting = true;
+      _error = null;
+    });
+
+    try {
+      final profile = await AuthService.instance.getCurrentProfile();
+      final call = await AppointmentCallService.instance.startSimulatedCall(
+        doctorName: _doctorNameCtrl.text.trim().isEmpty ? null : _doctorNameCtrl.text.trim(),
+        requestedDate: _formatDate(_pickedDate!),
+        requestedTime: _formatTime(_pickedTime!),
+        patientName: profile?.name,
+        notes: _notesCtrl.text.trim(),
+      );
+      setState(() => _call = call);
+    } catch (e) {
+      setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      setState(() => _starting = false);
+    }
+  }
+
+  Future<void> _sendSimulatedReply() async {
+    final current = _call;
+    final text = _simReplyCtrl.text.trim();
+    if (current == null || text.isEmpty) return;
+    setState(() => _sendingReply = true);
+    _simReplyCtrl.clear();
+    try {
+      final updated = await AppointmentCallService.instance.sendSimulatedReply(current.id, text);
+      if (mounted) setState(() => _call = updated);
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _sendingReply = false);
+    }
+  }
   void _startPolling() {
     _pollTimer?.cancel();
     _pollTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
@@ -215,10 +268,13 @@ class _BookByCallScreenState extends State<BookByCallScreen> {
                 borderRadius: BorderRadius.circular(10),
               ),
               child: const Text(
-                'This places a real phone call to the number you enter. The '
-                'assistant identifies itself as an automated caller, never '
-                'shares your medicines or health details with the office, '
-                'and only asks about scheduling.',
+                'The "Call to book" button places a real phone call and needs '
+                'a paid calling account set up on the backend. The assistant '
+                'identifies itself as automated, never shares your medicines '
+                'or health details, and only asks about scheduling.\n\n'
+                'No calling account? Use "Simulate call instead" below \u2014 '
+                'same AI, but you type the office\'s replies yourself. Free, '
+                'and clearly marked as a simulation.',
                 style: TextStyle(fontSize: 13),
               ),
             ),
@@ -234,7 +290,7 @@ class _BookByCallScreenState extends State<BookByCallScreen> {
                 keyboardType: TextInputType.phone,
                 decoration: const InputDecoration(
                   labelText: 'Doctor\'s office phone number',
-                  hintText: '+1 415 555 0100',
+                  hintText: '+91 98765 43210 (not needed for simulation)',
                 ),
               ),
               const SizedBox(height: 12),
@@ -288,7 +344,41 @@ class _BookByCallScreenState extends State<BookByCallScreen> {
                   onPressed: _starting ? null : _startCall,
                 ),
               ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.chat_bubble_outline),
+                  label: const Text('Simulate call instead (free, no real call)'),
+                  onPressed: _starting ? null : _startSimulatedCall,
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.only(top: 6),
+                child: Text(
+                  'Simulation runs the same AI, but you type the office\u2019s '
+                  'replies yourself \u2014 no phone call happens and it\u2019s free.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ),
             ] else ...[
+              if (call.isSimulated)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.info_outline, size: 16, color: Colors.amber),
+                      SizedBox(width: 6),
+                      Text('Simulated \u2014 no real call was placed', style: TextStyle(fontSize: 12)),
+                    ],
+                  ),
+                ),
               Row(
                 children: [
                   Container(
@@ -356,6 +446,38 @@ class _BookByCallScreenState extends State<BookByCallScreen> {
                         child: Text(t.text, style: const TextStyle(fontSize: 13)),
                       ),
                     )),
+              ],
+              if (call.isSimulated && !call.isFinished) ...[
+                const SizedBox(height: 16),
+                Text(
+                  'Type what the doctor\'s office would say back:',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _simReplyCtrl,
+                        decoration: const InputDecoration(
+                          hintText: 'e.g. "That time isn\'t free, how about 5 PM?"',
+                          isDense: true,
+                        ),
+                        onSubmitted: (_) => _sendingReply ? null : _sendSimulatedReply(),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton.filled(
+                      icon: _sendingReply
+                          ? const SizedBox(
+                              width: 16, height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Icon(Icons.send),
+                      onPressed: _sendingReply ? null : _sendSimulatedReply,
+                    ),
+                  ],
+                ),
               ],
             ],
           ],
