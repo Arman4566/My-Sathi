@@ -123,7 +123,14 @@ router.post('/', async (req, res) => {
         from: process.env.TWILIO_FROM_NUMBER,
         url: `${base}/api/appointment-calls/${call.id}/voice`,
         statusCallback: `${base}/api/appointment-calls/${call.id}/status`,
-        statusCallbackEvent: ['completed', 'busy', 'no-answer', 'failed', 'canceled'],
+        // NOTE: statusCallbackEvent only accepts these 4 trigger-point
+        // values (initiated/ringing/answered/completed) — NOT call
+        // outcomes like busy/no-answer/failed/canceled. 'completed' fires
+        // once the call reaches any final state, and the actual outcome
+        // (including busy/no-answer/failed/canceled) shows up in
+        // CallStatus on that same webhook — see the /:id/status handler
+        // below, which already reads CallStatus correctly.
+        statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
         statusCallbackMethod: 'POST',
       });
       await pool.query(
