@@ -6,6 +6,7 @@ import '../services/database_service.dart';
 import 'chatbot_screen.dart';
 import '../services/settings_service.dart';
 import '../services/app_text.dart';
+import '../widgets/fullscreen_image_viewer.dart';
 
 class PrescriptionDetailScreen extends StatelessWidget {
   final Prescription prescription;
@@ -18,6 +19,12 @@ class PrescriptionDetailScreen extends StatelessWidget {
       appBar: AppBar(
         title: Text(AppText.t('report_details', lang)),
         actions: [
+          if (File(prescription.imagePath).existsSync())
+            IconButton(
+              icon: const Icon(Icons.download_outlined),
+              tooltip: AppText.t('save_to_gallery', lang),
+              onPressed: () => saveImageToGallery(context, prescription.imagePath, lang),
+            ),
           IconButton(
             icon: const Icon(Icons.delete_outline),
             tooltip: AppText.t('delete', lang),
@@ -53,7 +60,30 @@ class PrescriptionDetailScreen extends StatelessWidget {
           if (File(prescription.imagePath).existsSync())
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: Image.file(File(prescription.imagePath)),
+              child: Stack(
+                children: [
+                  GestureDetector(
+                    onTap: () => FullscreenImageViewer.open(
+                      context,
+                      File(prescription.imagePath),
+                      title: AppText.t('report_details', lang),
+                    ),
+                    child: Image.file(File(prescription.imagePath)),
+                  ),
+                  Positioned(
+                    right: 8,
+                    bottom: 8,
+                    child: ThumbnailFullscreenBadge(
+                      onTap: () => FullscreenImageViewer.open(
+                        context,
+                        File(prescription.imagePath),
+                        title: AppText.t('report_details', lang),
+                      ),
+                      tooltip: AppText.t('view_fullscreen', lang),
+                    ),
+                  ),
+                ],
+              ),
             ),
           const SizedBox(height: 16),
           Text(AppText.t('scanned_on', lang).replaceFirst('{date}',

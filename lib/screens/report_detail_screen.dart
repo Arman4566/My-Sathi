@@ -6,6 +6,7 @@ import '../services/database_service.dart';
 import 'chatbot_screen.dart';
 import '../services/settings_service.dart';
 import '../services/app_text.dart';
+import '../widgets/fullscreen_image_viewer.dart';
 
 class ReportDetailScreen extends StatelessWidget {
   final MedicalReport report;
@@ -18,6 +19,12 @@ class ReportDetailScreen extends StatelessWidget {
       appBar: AppBar(
         title: Text(report.title),
         actions: [
+          if (File(report.filePath).existsSync())
+            IconButton(
+              icon: const Icon(Icons.download_outlined),
+              tooltip: AppText.t('save_to_gallery', lang),
+              onPressed: () => saveImageToGallery(context, report.filePath, lang),
+            ),
           IconButton(
             icon: const Icon(Icons.delete_outline),
             onPressed: () async {
@@ -51,7 +58,30 @@ class ReportDetailScreen extends StatelessWidget {
           if (File(report.filePath).existsSync())
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: Image.file(File(report.filePath)),
+              child: Stack(
+                children: [
+                  GestureDetector(
+                    onTap: () => FullscreenImageViewer.open(
+                      context,
+                      File(report.filePath),
+                      title: report.title,
+                    ),
+                    child: Image.file(File(report.filePath)),
+                  ),
+                  Positioned(
+                    right: 8,
+                    bottom: 8,
+                    child: ThumbnailFullscreenBadge(
+                      onTap: () => FullscreenImageViewer.open(
+                        context,
+                        File(report.filePath),
+                        title: report.title,
+                      ),
+                      tooltip: AppText.t('view_fullscreen', lang),
+                    ),
+                  ),
+                ],
+              ),
             ),
           const SizedBox(height: 16),
           Text(AppText.t('uploaded_on', lang).replaceFirst('{date}',

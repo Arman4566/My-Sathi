@@ -212,6 +212,14 @@ class AppText {
       'scanned_report_from': 'Scanned report from {date}',
       'uploaded_on': 'Uploaded {date}',
       'ai_summary': 'AI summary',
+      // Fullscreen image viewer (prescriptions & reports)
+      'view_fullscreen': 'View fullscreen',
+      'save_to_gallery': 'Save to gallery',
+      'saving': 'Saving…',
+      'saved_to_gallery': 'Saved to gallery',
+      'save_failed': 'Could not save image',
+      'gallery_permission_denied':
+          'Permission to save photos was denied. Enable it in your phone\'s app settings.',
       // Report upload screen
       'summary_unavailable':
           "Couldn't generate an AI summary right now (backend may not be "
@@ -439,6 +447,14 @@ class AppText {
       'scanned_report_from': '{date} की स्कैन की गई रिपोर्ट',
       'uploaded_on': '{date} को अपलोड की गई',
       'ai_summary': 'AI सारांश',
+      // Fullscreen image viewer (prescriptions & reports)
+      'view_fullscreen': 'फुलस्क्रीन देखें',
+      'save_to_gallery': 'गैलरी में सेव करें',
+      'saving': 'सेव हो रहा है…',
+      'saved_to_gallery': 'गैलरी में सेव हो गया',
+      'save_failed': 'इमेज सेव नहीं हो सकी',
+      'gallery_permission_denied':
+          'फोटो सेव करने की अनुमति नहीं दी गई। इसे अपने फोन की ऐप सेटिंग्स में चालू करें।',
       // Report upload screen
       'summary_unavailable':
           'अभी AI सारांश नहीं बन सका (बैकएंड उपलब्ध नहीं हो सकता), लेकिन रिपोर्ट '

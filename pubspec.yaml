@@ -35,6 +35,10 @@ dependencies:
   google_mlkit_text_recognition: ^0.13.0
   permission_handler: ^11.3.1
 
+  # Save prescription/report images to the phone's photo gallery from
+  # the fullscreen viewer (handles Android/iOS permissions internally)
+  gal: ^2.3.2
+
   # Networking (for chatbot / AI parsing backend calls)
   http: ^1.2.1
 

@@ -337,6 +337,11 @@ flutter run
 <uses-permission android:name="android.permission.CAMERA"/>
 <uses-permission android:name="android.permission.RECORD_AUDIO"/>
 <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
+<!-- For "Save to gallery" in the prescription/report fullscreen viewer
+     (gal package) — only needed on Android 9 (API 29) and below; gal
+     uses the modern MediaStore API on Android 10+ without this. -->
+<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+    android:maxSdkVersion="29"/>
 ```
 `RECORD_AUDIO` is for voice input in the chatbot; `USE_FULL_SCREEN_INTENT`
 is for the alarm-style reminders. Also: core library desugaring must be
@@ -398,7 +403,11 @@ terminal will show the real exception and stack trace.
 ### 4. iOS setup notes
 `Info.plist` needs `NSCameraUsageDescription`,
 `NSPhotoLibraryUsageDescription`, and `NSMicrophoneUsageDescription` (for
-voice input) plus `NSSpeechRecognitionUsageDescription`.
+voice input) plus `NSSpeechRecognitionUsageDescription`. For "Save to
+gallery" in the prescription/report fullscreen viewer (`gal` package),
+also add `NSPhotoLibraryAddUsageDescription` — a short string like "Save
+scanned prescriptions and reports to your photos" is shown to the user
+the first time they tap Save.
 
 ### 5. Get accurate device timezones (recommended)
 Add `flutter_timezone` and call `tz.setLocalLocation(...)` at startup so
