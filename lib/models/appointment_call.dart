@@ -25,12 +25,17 @@ class AppointmentCall {
   final String requestedTime;
   final String? patientName;
   final String notes;
-  // queued | ringing | in_progress | completed | no_answer | busy | failed | canceled
+  // scheduled | queued | ringing | in_progress | completed | no_answer | busy | failed | canceled
   final String status;
   // confirmed | declined | needs_followup | unclear | null (until completed)
   final String? outcome;
   final String? outcomeSummary;
   final DateTime? confirmedDateTime;
+  // Set when this call was scheduled to be placed automatically at a
+  // future date/time (see AppointmentCallService.startCall's
+  // `scheduledAt` param) rather than immediately. Null once the backend
+  // poller has picked it up and moved it past status 'scheduled'.
+  final DateTime? scheduledAt;
   final List<CallTranscriptTurn> transcript;
   final bool isSimulated;
   final DateTime createdAt;
@@ -47,6 +52,7 @@ class AppointmentCall {
     this.outcome,
     this.outcomeSummary,
     this.confirmedDateTime,
+    this.scheduledAt,
     this.transcript = const [],
     this.isSimulated = false,
     required this.createdAt,
@@ -69,6 +75,9 @@ class AppointmentCall {
       outcomeSummary: json['outcomeSummary'] as String?,
       confirmedDateTime: json['confirmedDateTime'] != null
           ? DateTime.tryParse(json['confirmedDateTime'] as String)
+          : null,
+      scheduledAt: json['scheduledAt'] != null
+          ? DateTime.tryParse(json['scheduledAt'] as String)
           : null,
       transcript: ((json['transcript'] as List?) ?? [])
           .map((t) => CallTranscriptTurn.fromJson(t as Map<String, dynamic>))

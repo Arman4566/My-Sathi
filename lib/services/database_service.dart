@@ -7,6 +7,7 @@ import '../models/appointment.dart';
 import '../models/user_profile.dart';
 import '../models/health_record.dart';
 import '../models/medical_report.dart';
+import '../models/care_contact.dart';
 import 'cloud_sync_service.dart';
 
 /// Single source of truth for all local persistence.
@@ -31,7 +32,7 @@ class DatabaseService {
 
     return openDatabase(
       path,
-      version: 4,
+      version: 5,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE medicines (
@@ -104,6 +105,25 @@ class DatabaseService {
             uploadedDate TEXT
           )
         ''');
+        await db.execute('''
+          CREATE TABLE care_contacts (
+            id TEXT PRIMARY KEY,
+            name TEXT,
+            phone TEXT NOT NULL,
+            notifyMissedMedicine INTEGER DEFAULT 1,
+            notifyBeforeAppointment INTEGER DEFAULT 1
+          )
+        ''');
+        await db.execute('''
+          CREATE TABLE medicine_doses (
+            id TEXT PRIMARY KEY,
+            medicineId TEXT NOT NULL,
+            scheduledFor TEXT NOT NULL,
+            takenAt TEXT
+          )
+        ''');
+        await db.execute(
+            'CREATE UNIQUE INDEX medicine_doses_slot ON medicine_doses (medicineId, scheduledFor)');
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -161,6 +181,29 @@ class DatabaseService {
           // onCreate above, so this only runs on upgrades.
           await db.execute('ALTER TABLE medicines ADD COLUMN prescribedBy TEXT');
           await db.execute('ALTER TABLE profiles ADD COLUMN bio TEXT');
+        }
+        if (oldVersion < 5) {
+          // Care contacts (WhatsApp missed-dose / appointment alerts)
+          // and per-dose "taken" confirmations.
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS care_contacts (
+              id TEXT PRIMARY KEY,
+              name TEXT,
+              phone TEXT NOT NULL,
+              notifyMissedMedicine INTEGER DEFAULT 1,
+              notifyBeforeAppointment INTEGER DEFAULT 1
+            )
+          ''');
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS medicine_doses (
+              id TEXT PRIMARY KEY,
+              medicineId TEXT NOT NULL,
+              scheduledFor TEXT NOT NULL,
+              takenAt TEXT
+            )
+          ''');
+          await db.execute(
+              'CREATE UNIQUE INDEX IF NOT EXISTS medicine_doses_slot ON medicine_doses (medicineId, scheduledFor)');
         }
       },
     );
@@ -356,5 +399,65 @@ class DatabaseService {
     final db = await database;
     await db.delete('medical_reports', where: 'id = ?', whereArgs: [id]);
     if (sync) unawaited(CloudSyncService.instance.deleteMedicalReport(id));
+  }
+
+  // ---------- Care contacts (WhatsApp missed-dose / appointment alerts) ----------
+  Future<void> insertCareContact(CareContact c, {bool sync = true}) async {
+    final db = await database;
+    await db.insert('care_contacts', c.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace);
+    if (sync) unawaited(CloudSyncService.instance.pushCareContact(c));
+  }
+
+  Future<List<CareContact>> getCareContacts() async {
+    final db = await database;
+    final rows = await db.query('care_contacts', orderBy: 'name ASC');
+    return rows.map((r) => CareContact.fromMap(r)).toList();
+  }
+
+  Future<void> deleteCareContact(String id, {bool sync = true}) async {
+    final db = await database;
+    await db.delete('care_contacts', where: 'id = ?', whereArgs: [id]);
+    if (sync) unawaited(CloudSyncService.instance.deleteCareContact(id));
+  }
+
+  // ---------- Medicine dose confirmations ("did I take it?") ----------
+  //
+  // Backs the "I took it ✅" button on the alarm-ring screen. Recorded
+  // both locally (so the app itself could show a taken/not-taken state)
+  // and pushed to the backend (fire-and-forget, like everything else in
+  // CloudSyncService) — the backend copy is what actually matters for
+  // this feature, since whatsapp_reminders.js checks it there before
+  // deciding a dose was missed and alerting a caregiver.
+  Future<void> markDoseTaken(String medicineId, DateTime scheduledFor, {bool sync = true}) async {
+    final db = await database;
+    final scheduledIso = scheduledFor.toIso8601String();
+    final nowIso = DateTime.now().toIso8601String();
+    await db.insert(
+      'medicine_doses',
+      {
+        'id': '$medicineId|$scheduledIso',
+        'medicineId': medicineId,
+        'scheduledFor': scheduledIso,
+        'takenAt': nowIso,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+    if (sync) {
+      unawaited(CloudSyncService.instance.confirmDoseTaken(medicineId, scheduledFor));
+    }
+  }
+
+  /// Whether [medicineId]'s dose scheduled for [scheduledFor] has already
+  /// been confirmed taken (used to avoid showing "I took it" twice for
+  /// the same slot, e.g. after a snooze).
+  Future<bool> isDoseTaken(String medicineId, DateTime scheduledFor) async {
+    final db = await database;
+    final rows = await db.query(
+      'medicine_doses',
+      where: 'medicineId = ? AND scheduledFor = ? AND takenAt IS NOT NULL',
+      whereArgs: [medicineId, scheduledFor.toIso8601String()],
+    );
+    return rows.isNotEmpty;
   }
 }

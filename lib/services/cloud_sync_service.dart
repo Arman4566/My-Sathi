@@ -5,6 +5,7 @@ import '../models/appointment.dart';
 import '../models/prescription.dart';
 import '../models/medical_report.dart';
 import '../models/health_record.dart';
+import '../models/care_contact.dart';
 import 'auth_service.dart';
 import 'ai_backend_service.dart';
 import 'database_service.dart';
@@ -117,6 +118,43 @@ class CloudSyncService {
 
   Future<void> deleteHealthRecord(String id) => _deleteSafely('health-records', id);
 
+  Future<void> pushCareContact(CareContact c) async {
+    await _pushSafely('care-contacts', {
+      'id': c.id,
+      'name': c.name,
+      'phone': c.phone,
+      'notifyMissedMedicine': c.notifyMissedMedicine,
+      'notifyBeforeAppointment': c.notifyBeforeAppointment,
+    });
+  }
+
+  Future<void> deleteCareContact(String id) => _deleteSafely('care-contacts', id);
+
+  /// Confirms a medicine dose was taken — see database_service.dart's
+  /// markDoseTaken. This is what stops the backend's missed-dose
+  /// WhatsApp poller from alerting a caregiver for this slot.
+  Future<void> confirmDoseTaken(String medicineId, DateTime scheduledFor) async {
+    try {
+      final headers = await _authHeaders();
+      if (headers == null) return;
+      await http
+          .post(Uri.parse('$_baseUrl/api/medicine-doses/confirm'),
+              headers: headers,
+              body: jsonEncode({
+                'medicineId': medicineId,
+                'scheduledFor': scheduledFor.toUtc().toIso8601String(),
+              }))
+          .timeout(const Duration(seconds: 15));
+    } catch (_) {
+      // Same reasoning as _pushSafely — don't disrupt the UI over this.
+      // Worth noting this one is more consequential than most: if it
+      // never lands (offline right when the reminder fired, app killed
+      // before it retries, etc.), a caregiver could get a "missed dose"
+      // alert for a dose that actually was taken. There's no retry queue
+      // here yet — see the CloudSyncService class doc for that caveat.
+    }
+  }
+
   Future<void> _pushSafely(String endpoint, Map<String, dynamic> body) async {
     try {
       final headers = await _authHeaders();
@@ -156,6 +194,7 @@ class CloudSyncService {
       _pullPrescriptions(headers),
       _pullMedicalReports(headers),
       _pullHealthRecords(headers),
+      _pullCareContacts(headers),
     ]);
   }
 
@@ -272,6 +311,26 @@ class CloudSyncService {
           notes: j['notes'] ?? '',
         );
         await DatabaseService.instance.insertHealthRecord(r, sync: false);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _pullCareContacts(Map<String, String> headers) async {
+    try {
+      final res = await http
+          .get(Uri.parse('$_baseUrl/api/care-contacts'), headers: headers)
+          .timeout(const Duration(seconds: 20));
+      if (res.statusCode != 200) return;
+      final list = (jsonDecode(res.body)['contacts'] as List);
+      for (final j in list) {
+        final c = CareContact(
+          id: j['id'],
+          name: j['name'] ?? '',
+          phone: j['phone'] ?? '',
+          notifyMissedMedicine: j['notifyMissedMedicine'] ?? true,
+          notifyBeforeAppointment: j['notifyBeforeAppointment'] ?? true,
+        );
+        await DatabaseService.instance.insertCareContact(c, sync: false);
       }
     } catch (_) {}
   }

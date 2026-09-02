@@ -128,6 +128,15 @@ CREATE TABLE IF NOT EXISTS appointment_calls (
 -- above already existed for some deployments, hence IF NOT EXISTS.
 ALTER TABLE appointment_calls ADD COLUMN IF NOT EXISTS is_simulated BOOLEAN DEFAULT false;
 
+-- When set, the call isn't placed immediately -- it sits with
+-- status = 'scheduled' until the background poller in
+-- appointment_calls.js (startScheduledCallPoller) notices scheduled_at
+-- has arrived and places it automatically, the same way pressing "Call
+-- to book" would. Lets the patient set a date/time once (e.g. "call the
+-- clinic tomorrow at 9am to confirm my appointment") without needing to
+-- have the app open at that moment.
+ALTER TABLE appointment_calls ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMPTZ;
+
 CREATE TABLE IF NOT EXISTS health_records (
   id UUID PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -138,3 +147,44 @@ CREATE TABLE IF NOT EXISTS health_records (
   notes TEXT DEFAULT '',
   created_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- WhatsApp caregiver notifications -------------------------------------
+--
+-- care_contacts: a person (family member/caregiver) the patient wants
+-- notified. Each contact opts into either/both alert types. See
+-- whatsapp_reminders.js for the poller that actually sends these.
+CREATE TABLE IF NOT EXISTS care_contacts (
+  id UUID PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT,
+  phone TEXT NOT NULL, -- E.164 format, e.g. +919876543210
+  notify_missed_medicine BOOLEAN DEFAULT true,
+  notify_before_appointment BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- medicine_doses: one row per (medicine, scheduled dose time) once
+-- something has happened for it -- either the patient confirmed they
+-- took it (taken_at) or the poller already sent a "missed" WhatsApp
+-- alert for it (missed_alert_sent_at), so we never alert twice for the
+-- same dose. Rows are created lazily by whichever happens first: the
+-- app's POST /api/medicine-doses/confirm, or the poller finding a dose
+-- overdue with no row yet. No FK on medicine_id (unlike other tables)
+-- because a dose can be confirmed moments after the medicine itself was
+-- created, before its own cloud sync necessarily lands -- an FK here
+-- would make that ordinary race fail instead of just recording it.
+CREATE TABLE IF NOT EXISTS medicine_doses (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  medicine_id UUID NOT NULL,
+  scheduled_for TIMESTAMPTZ NOT NULL,
+  taken_at TIMESTAMPTZ,
+  missed_alert_sent_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (medicine_id, scheduled_for)
+);
+
+-- Set once a "your appointment is coming up" WhatsApp reminder has been
+-- sent for this appointment, so the poller (which runs every few
+-- minutes) doesn't send it more than once.
+ALTER TABLE appointments ADD COLUMN IF NOT EXISTS whatsapp_reminder_sent_at TIMESTAMPTZ;

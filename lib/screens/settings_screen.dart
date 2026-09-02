@@ -4,6 +4,7 @@ import '../services/settings_service.dart';
 import '../services/auth_service.dart';
 import '../services/app_text.dart';
 import 'login_screen.dart';
+import 'care_contacts_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -48,6 +49,21 @@ class SettingsScreen extends StatelessWidget {
               onChanged: (code) {
                 if (code != null) settings.setLanguage(code);
               },
+            ),
+          ),
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.contact_phone_outlined),
+            title: Text(AppText.t('care_contacts_title', lang)),
+            subtitle: Text(
+              AppText.t('care_contacts_subtitle', lang),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const CareContactsScreen()),
             ),
           ),
           const Divider(),

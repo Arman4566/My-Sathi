@@ -39,6 +39,12 @@ class AppointmentCallService {
   /// Starts a call. [requestedDate] should be 'YYYY-MM-DD' and
   /// [requestedTime] a plain time string like '4:30 PM' — the AI reads
   /// these out loud, they don't need to be machine-parseable.
+  ///
+  /// If [scheduledAt] is given (and in the future), the call isn't placed
+  /// now — the backend stores it with status 'scheduled' and a background
+  /// poller automatically dials at that date/time on its own, without the
+  /// app needing to be open. Leave it null to call immediately, same as
+  /// before.
   Future<AppointmentCall> startCall({
     required String doctorPhone,
     required String requestedDate,
@@ -46,6 +52,7 @@ class AppointmentCallService {
     String? doctorName,
     String? patientName,
     String notes = '',
+    DateTime? scheduledAt,
   }) async {
     final headers = await _authHeaders();
     final res = await http.post(
@@ -58,6 +65,7 @@ class AppointmentCallService {
         'doctorName': doctorName,
         'patientName': patientName,
         'notes': notes,
+        if (scheduledAt != null) 'scheduledAt': scheduledAt.toUtc().toIso8601String(),
       }),
     );
 

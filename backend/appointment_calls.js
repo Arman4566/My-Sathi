@@ -7,6 +7,14 @@
 // speak its reply with Twilio's <Say>, and either keep listening
 // (<Gather>) or hang up. The app polls GET /:id for status/transcript.
 //
+// SCHEDULED CALLS: the app can also pass `scheduledAt` (an ISO 8601
+// datetime) instead of calling right away -- the row is stored with
+// status='scheduled' and a background poller (startScheduledCallPoller,
+// started from server.js) automatically places the call once that time
+// arrives, the same way pressing "Call to book" would. This is separate
+// from `requestedDate`/`requestedTime`, which is the appointment slot
+// read out to the clinic, not when we dial them.
+//
 // SIMULATION MODE: calling a real, unverified phone number requires a
 // paid (non-trial) Twilio account -- trial accounts can only call
 // manually-verified numbers, and some Twilio trials now gate even
@@ -16,7 +24,9 @@
 // typed text instead of a real call -- useful for demos/development
 // without needing a funded Twilio account. Simulated calls are flagged
 // with is_simulated = true so the UI can label them clearly; they are
-// never presented as if a real call happened.
+// never presented as if a real call happened. Simulated calls can't be
+// scheduled -- they need a person typing replies live, so there's
+// nothing for the poller to automate.
 //
 // SETUP REQUIRED for REAL calls (see .env.example):
 // - TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_FROM_NUMBER from a
@@ -62,6 +72,7 @@ function toJson(row) {
     outcome: row.outcome,
     outcomeSummary: row.outcome_summary,
     confirmedDateTime: row.confirmed_date_time,
+    scheduledAt: row.scheduled_at,
     transcript: row.transcript || [],
     isSimulated: !!row.is_simulated,
     createdAt: row.created_at,
@@ -207,6 +218,96 @@ async function advanceCall(call, incomingText) {
   return { turn, transcript, turnCount };
 }
 
+// Places the actual outbound Twilio call for a queued/scheduled row and
+// updates its status accordingly. Shared by the immediate "Call to book"
+// path and the scheduled-call poller below so both behave identically.
+// Returns { ok: true } on success or { ok: false, message } on failure
+// (the row is updated to 'failed' either way before returning).
+async function placeTwilioCall(call) {
+  const base = process.env.PUBLIC_BASE_URL;
+  const client = twilioClient();
+  if (!client || !process.env.TWILIO_FROM_NUMBER || !base) {
+    const message = 'AI phone booking isn\'t configured on the backend (missing Twilio credentials or PUBLIC_BASE_URL).';
+    await pool.query(
+      `UPDATE appointment_calls SET status = 'failed', outcome_summary = $1, updated_at = now() WHERE id = $2`,
+      [message, call.id]
+    );
+    return { ok: false, message };
+  }
+
+  try {
+    const twilioCall = await client.calls.create({
+      to: call.doctor_phone,
+      from: process.env.TWILIO_FROM_NUMBER,
+      url: `${base}/api/appointment-calls/${call.id}/voice`,
+      statusCallback: `${base}/api/appointment-calls/${call.id}/status`,
+      // statusCallbackEvent only accepts these 4 trigger-point values
+      // (initiated/ringing/answered/completed) -- NOT call outcomes like
+      // busy/no-answer/failed/canceled. 'completed' fires once the call
+      // reaches any final state, and the actual outcome shows up in
+      // CallStatus on that same webhook (see /:id/status below).
+      statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
+      statusCallbackMethod: 'POST',
+    });
+    await pool.query(
+      `UPDATE appointment_calls SET status = 'ringing', twilio_call_sid = $1, updated_at = now() WHERE id = $2`,
+      [twilioCall.sid, call.id]
+    );
+    return { ok: true };
+  } catch (twilioErr) {
+    console.error('Twilio call.create failed:', twilioErr);
+    const message = `Could not place the call: ${twilioErr.message || 'unknown Twilio error'}`;
+    await pool.query(
+      `UPDATE appointment_calls SET status = 'failed', outcome_summary = $1, updated_at = now() WHERE id = $2`,
+      [message, call.id]
+    );
+    return { ok: false, message };
+  }
+}
+
+// ---------------------------------------------------------------------
+// Scheduled-call poller -- for calls created with a future `scheduledAt`,
+// this periodically checks for ones whose time has arrived and places
+// them the same way "Call to book" would, without needing the app open.
+// A simple in-process setInterval is enough here (single backend
+// instance); if this is ever run with multiple backend processes sharing
+// one database, this should move to a proper job queue or add a
+// `SELECT ... FOR UPDATE SKIP LOCKED` claim step to avoid double-dialing.
+// ---------------------------------------------------------------------
+const SCHEDULE_POLL_INTERVAL_MS = 30 * 1000;
+let pollerRunning = false;
+
+async function pollScheduledCalls() {
+  if (pollerRunning) return; // don't overlap if a previous tick is still working
+  pollerRunning = true;
+  try {
+    const due = await pool.query(
+      `SELECT * FROM appointment_calls WHERE status = 'scheduled' AND scheduled_at <= now()`
+    );
+    for (const call of due.rows) {
+      // Claim it first (flip out of 'scheduled') so a slow tick can't
+      // pick the same row up twice.
+      const claim = await pool.query(
+        `UPDATE appointment_calls SET status = 'queued', updated_at = now() WHERE id = $1 AND status = 'scheduled' RETURNING *`,
+        [call.id]
+      );
+      if (!claim.rows[0]) continue; // already claimed by a previous tick
+      await placeTwilioCall(claim.rows[0]);
+    }
+  } catch (err) {
+    console.error('Scheduled-call poll failed:', err);
+  } finally {
+    pollerRunning = false;
+  }
+}
+
+function startScheduledCallPoller() {
+  setInterval(pollScheduledCalls, SCHEDULE_POLL_INTERVAL_MS);
+  // Also run once shortly after startup so calls scheduled while the
+  // backend was down (or right at boot) don't sit waiting a full interval.
+  setTimeout(pollScheduledCalls, 5 * 1000);
+}
+
 // ---------------------------------------------------------------------
 // Authenticated routes the Flutter app calls directly.
 // ---------------------------------------------------------------------
@@ -242,7 +343,7 @@ router.get('/:id', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const { doctorName, doctorPhone, requestedDate, requestedTime, patientName, notes } = req.body;
+    const { doctorName, doctorPhone, requestedDate, requestedTime, patientName, notes, scheduledAt } = req.body;
     if (!doctorPhone || !requestedDate || !requestedTime) {
       return res.status(400).json({ error: 'missing_fields' });
     }
@@ -258,6 +359,34 @@ router.post('/', async (req, res) => {
       });
     }
 
+    // Optional: schedule the call to be placed automatically later instead
+    // of right now. `scheduledAt` is an ISO 8601 datetime string from the
+    // app (the moment we should DIAL, not the requested appointment slot,
+    // which is requestedDate/requestedTime above and gets read out to
+    // whoever answers).
+    let scheduledDate = null;
+    if (scheduledAt) {
+      scheduledDate = new Date(scheduledAt);
+      if (isNaN(scheduledDate.getTime())) {
+        return res.status(400).json({ error: 'invalid_scheduled_at', message: 'scheduledAt is not a valid date/time.' });
+      }
+      // A couple seconds of slack for clock skew between app and server.
+      if (scheduledDate.getTime() <= Date.now() - 2000) {
+        return res.status(400).json({ error: 'scheduled_at_in_past', message: 'The scheduled call time must be in the future.' });
+      }
+    }
+
+    if (scheduledDate) {
+      const insertResult = await pool.query(
+        `INSERT INTO appointment_calls
+           (user_id, doctor_name, doctor_phone, requested_date, requested_time, patient_name, notes, status, scheduled_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,'scheduled',$8)
+         RETURNING *`,
+        [req.userId, doctorName || null, doctorPhone, requestedDate, requestedTime, patientName || null, notes || '', scheduledDate.toISOString()]
+      );
+      return res.json({ call: toJson(insertResult.rows[0]) });
+    }
+
     const insertResult = await pool.query(
       `INSERT INTO appointment_calls
          (user_id, doctor_name, doctor_phone, requested_date, requested_time, patient_name, notes, status)
@@ -267,31 +396,9 @@ router.post('/', async (req, res) => {
     );
     const call = insertResult.rows[0];
 
-    try {
-      const twilioCall = await client.calls.create({
-        to: doctorPhone,
-        from: process.env.TWILIO_FROM_NUMBER,
-        url: `${base}/api/appointment-calls/${call.id}/voice`,
-        statusCallback: `${base}/api/appointment-calls/${call.id}/status`,
-        // statusCallbackEvent only accepts these 4 trigger-point values
-        // (initiated/ringing/answered/completed) -- NOT call outcomes like
-        // busy/no-answer/failed/canceled. 'completed' fires once the call
-        // reaches any final state, and the actual outcome shows up in
-        // CallStatus on that same webhook (see /:id/status below).
-        statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
-        statusCallbackMethod: 'POST',
-      });
-      await pool.query(
-        `UPDATE appointment_calls SET status = 'ringing', twilio_call_sid = $1, updated_at = now() WHERE id = $2`,
-        [twilioCall.sid, call.id]
-      );
-    } catch (twilioErr) {
-      console.error('Twilio call.create failed:', twilioErr);
-      await pool.query(
-        `UPDATE appointment_calls SET status = 'failed', outcome_summary = $1, updated_at = now() WHERE id = $2`,
-        [`Could not place the call: ${twilioErr.message || 'unknown Twilio error'}`, call.id]
-      );
-      return res.status(502).json({ error: 'call_failed', message: twilioErr.message });
+    const placed = await placeTwilioCall(call);
+    if (!placed.ok) {
+      return res.status(502).json({ error: 'call_failed', message: placed.message });
     }
 
     res.json({ call: toJson({ ...call, status: 'ringing' }) });
@@ -490,4 +597,4 @@ twilioWebhookRouter.post('/:id/status', async (req, res) => {
   res.sendStatus(200);
 });
 
-module.exports = { router, twilioWebhookRouter };
+module.exports = { router, twilioWebhookRouter, startScheduledCallPoller };

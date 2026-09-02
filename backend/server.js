@@ -9,7 +9,10 @@ const appointmentsRouter = require('./appointments');
 const prescriptionsRouter = require('./prescriptions');
 const medicalReportsRouter = require('./medical_reports');
 const healthRecordsRouter = require('./health_records');
-const { router: appointmentCallsRouter, twilioWebhookRouter } = require('./appointment_calls');
+const careContactsRouter = require('./care_contacts');
+const medicineDosesRouter = require('./medicine_doses');
+const { router: appointmentCallsRouter, twilioWebhookRouter, startScheduledCallPoller } = require('./appointment_calls');
+const { startWhatsAppReminderPoller } = require('./whatsapp_reminders');
 
 // BUG FIX: this used to hardcode model: 'gemini-3.5-flash' at every call
 // site below — that model name doesn't exist. Since an "unknown model"
@@ -39,6 +42,10 @@ app.use('/api/appointments', appointmentsRouter);
 app.use('/api/prescriptions', prescriptionsRouter);
 app.use('/api/medical-reports', medicalReportsRouter);
 app.use('/api/health-records', healthRecordsRouter);
+// Caregiver/family contacts for WhatsApp missed-dose + appointment
+// alerts, and the endpoint the app hits to confirm a dose was taken.
+app.use('/api/care-contacts', careContactsRouter);
+app.use('/api/medicine-doses', medicineDosesRouter);
 // Authenticated endpoints the Flutter app calls (start a call, poll status).
 app.use('/api/appointment-calls', appointmentCallsRouter);
 // Unauthenticated webhooks Twilio itself calls back into during a live
@@ -328,3 +335,12 @@ app.post('/api/summarize-report', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Backend running on port ${PORT}`));
+
+// Background poller that automatically places any AI phone call the
+// patient scheduled for a future date/time (see backend/appointment_calls.js
+// -> POST /api/appointment-calls with `scheduledAt`, and startScheduledCallPoller).
+startScheduledCallPoller();
+
+// Background poller for WhatsApp caregiver alerts (missed medicine doses
+// and upcoming appointments) — see whatsapp_reminders.js.
+startWhatsAppReminderPoller();

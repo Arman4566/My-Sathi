@@ -169,24 +169,100 @@ class NotificationService {
   }
 
   // ---------- Medicines ----------
+  //
+  // CLASH FIX: two (or more) medicines with the same reminder time used to
+  // each get their own independent alarm via `_idFor(medicine.id, time)`.
+  // Since the id was derived from the medicine's own id, two different
+  // medicines at, say, 8:00 AM got two *different* ids and therefore two
+  // separate alarms both firing at the same moment — two full-screen alarm
+  // takeovers stacking on top of each other and, worse, two looping alarm
+  // sounds playing over one another at once.
+  //
+  // Fixed by scheduling at "slot" granularity instead of "medicine"
+  // granularity: every time a medicine is added, edited, deleted, or
+  // deactivated, we recompute every active medicine's *next occurrence*
+  // (a specific date+time, not just a clock time — this matters because
+  // two medicines with the same "08:00" time-of-day but different
+  // daily/custom-weekday schedules aren't actually due on the same day
+  // every time) and group medicines that land on the exact same minute
+  // into a single combined alarm listing all of them. That way a clash
+  // rings once, with one sound, showing everything that's due.
   Future<void> scheduleMedicineReminders(Medicine medicine) async {
+    await _recomputeMedicineAlarms();
+  }
+
+  /// Public entry point for recomputing every active medicine's next
+  /// reminder slot (merging same-moment clashes) without needing to pass
+  /// a specific medicine — e.g. right after any one of them rings.
+  Future<void> recomputeAllMedicineAlarms() async {
+    await _recomputeMedicineAlarms();
+  }
+
+  Future<void> cancelMedicineReminders(Medicine medicine) async {
+    // Recompute excluding this medicine by id rather than just canceling
+    // its own old alarm id — it may currently be merged into a combined
+    // slot alarm with other medicines, which needs to be rebuilt without
+    // it (not silently canceled for everyone sharing that slot). Passing
+    // the id explicitly also makes this correct even when this is called
+    // *before* the medicine is removed/deactivated in the database (see
+    // MedicineListScreen._stopMedicine/_deleteMedicine).
+    await _recomputeMedicineAlarms(excludeMedicineId: medicine.id);
+  }
+
+  /// Cancels every currently-scheduled medicine alarm (individual or
+  /// merged) and reschedules from scratch based on the active medicines in
+  /// the database right now. This full recompute — rather than trying to
+  /// patch a single medicine's alarm in place — is what lets same-time
+  /// clashes get merged (and un-merged again once no longer clashing)
+  /// correctly, no matter what changed.
+  Future<void> _recomputeMedicineAlarms({String? excludeMedicineId}) async {
     final soundEnabled = await _isSoundEnabled();
     final lang = await _currentLanguage();
-    for (final time in medicine.times) {
-      final next = _nextOccurrenceForMedicine(medicine, time);
-      if (next == null) continue; // course already finished for this time
 
-      final id = _idFor(medicine.id, time);
-      final title = medicine.prescribedBy != null && medicine.prescribedBy!.isNotEmpty
-          ? AppText.t('time_for_medicine_doctor', lang)
-              .replaceFirst('{doctor}', medicine.prescribedBy!)
-          : AppText.t('time_for_medicine', lang);
-      final body = '${medicine.name} (${medicine.dosage}) — ${medicine.instructions}';
+    var medicines = await DatabaseService.instance.getActiveMedicines();
+    if (excludeMedicineId != null) {
+      medicines = medicines.where((m) => m.id != excludeMedicineId).toList();
+    }
+
+    await _cancelAllMedicineAlarms();
+    if (medicines.isEmpty) return;
+
+    // Group by the exact next-occurrence minute so only doses genuinely
+    // due at the same moment get merged.
+    final Map<DateTime, List<_DueMedicine>> slots = {};
+    for (final m in medicines) {
+      for (final time in m.times) {
+        final next = _nextOccurrenceForMedicine(m, time);
+        if (next == null) continue; // course already finished for this time
+        final key = DateTime(next.year, next.month, next.day, next.hour, next.minute);
+        slots.putIfAbsent(key, () => []).add(_DueMedicine(m, time));
+      }
+    }
+
+    for (final entry in slots.entries) {
+      final dateTime = entry.key;
+      final due = entry.value;
+      final id = _idFor(dateTime.toIso8601String(), 'medslot');
+
+      String title;
+      String body;
+      if (due.length == 1) {
+        final medicine = due.first.medicine;
+        title = medicine.prescribedBy != null && medicine.prescribedBy!.isNotEmpty
+            ? AppText.t('time_for_medicine_doctor', lang)
+                .replaceFirst('{doctor}', medicine.prescribedBy!)
+            : AppText.t('time_for_medicine', lang);
+        body = '${medicine.name} (${medicine.dosage}) — ${medicine.instructions}';
+      } else {
+        title = AppText.t('time_for_medicines_multiple', lang)
+            .replaceFirst('{count}', due.length.toString());
+        body = due.map((d) => '${d.medicine.name} (${d.medicine.dosage})').join(', ');
+      }
 
       await _saveAlarmMeta(id, {
         'kind': 'medicine',
-        'medicineId': medicine.id,
-        'time': time,
+        'medicineIds': due.map((d) => d.medicine.id).toList(),
+        'scheduledFor': dateTime.toIso8601String(),
         'title': title,
         'body': body,
         'assetPath': _medicineSound,
@@ -195,7 +271,7 @@ class NotificationService {
       await _fireAt(
         id: id,
         kind: 'medicine',
-        dateTime: next,
+        dateTime: dateTime,
         title: title,
         body: body,
         soundEnabled: soundEnabled,
@@ -203,9 +279,18 @@ class NotificationService {
     }
   }
 
-  Future<void> cancelMedicineReminders(Medicine medicine) async {
-    for (final time in medicine.times) {
-      final id = _idFor(medicine.id, time);
+  /// Cancels every alarm/notification currently tracked as a medicine
+  /// reminder (single or merged slot), as a clean slate before
+  /// `_recomputeMedicineAlarms` rebuilds them.
+  Future<void> _cancelAllMedicineAlarms() async {
+    final prefs = await SharedPreferences.getInstance();
+    final store = _decodeStore(prefs.getString(_metaPrefsKey));
+    final medicineIds = store.entries
+        .where((e) => (e.value as Map?)?['kind'] == 'medicine')
+        .map((e) => int.tryParse(e.key))
+        .whereType<int>()
+        .toList();
+    for (final id in medicineIds) {
       await _cancelAny(id);
     }
   }
@@ -497,4 +582,13 @@ class NotificationService {
 
   String _formatTime(DateTime dt) =>
       '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+}
+
+/// One medicine's dose that's due at a particular slot, paired with which
+/// of its configured times produced that occurrence (kept only for
+/// potential future use — the merged alarm itself just needs name/dosage).
+class _DueMedicine {
+  final Medicine medicine;
+  final String time;
+  _DueMedicine(this.medicine, this.time);
 }

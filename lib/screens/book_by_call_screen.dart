@@ -38,6 +38,16 @@ class _BookByCallScreenState extends State<BookByCallScreen> {
   DateTime? _pickedDate;
   TimeOfDay? _pickedTime;
 
+  // "Schedule this call for later" — when on, the call isn't placed the
+  // moment you tap the button; instead the backend automatically dials
+  // the clinic at _scheduleDate/_scheduleTime on its own (see
+  // AppointmentCallService.startCall's scheduledAt param). This is
+  // separate from _pickedDate/_pickedTime above, which is the
+  // appointment slot read out to the clinic, not when we call them.
+  bool _scheduleCall = false;
+  DateTime? _scheduleDate;
+  TimeOfDay? _scheduleTime;
+
   bool _starting = false;
   bool _sendingReply = false;
   String? _error;
@@ -74,6 +84,31 @@ class _BookByCallScreenState extends State<BookByCallScreen> {
     if (picked != null) setState(() => _pickedTime = picked);
   }
 
+  Future<void> _pickScheduleDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _scheduleDate ?? now,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365)),
+    );
+    if (picked != null) setState(() => _scheduleDate = picked);
+  }
+
+  Future<void> _pickScheduleTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _scheduleTime ?? TimeOfDay.now(),
+    );
+    if (picked != null) setState(() => _scheduleTime = picked);
+  }
+
+  DateTime? get _combinedScheduleDateTime {
+    if (_scheduleDate == null || _scheduleTime == null) return null;
+    return DateTime(_scheduleDate!.year, _scheduleDate!.month, _scheduleDate!.day,
+        _scheduleTime!.hour, _scheduleTime!.minute);
+  }
+
   String _formatDate(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
@@ -83,10 +118,25 @@ class _BookByCallScreenState extends State<BookByCallScreen> {
     return '$hour:${t.minute.toString().padLeft(2, '0')} $period';
   }
 
+  String _formatDateTime(DateTime dt) =>
+      '${_formatDate(dt)} at ${_formatTime(TimeOfDay.fromDateTime(dt))}';
+
   Future<void> _startCall() async {
     if (_phoneCtrl.text.trim().isEmpty || _pickedDate == null || _pickedTime == null) {
       setState(() => _error = 'Please enter the doctor\'s phone number and pick a date and time.');
       return;
+    }
+    DateTime? scheduledAt;
+    if (_scheduleCall) {
+      scheduledAt = _combinedScheduleDateTime;
+      if (scheduledAt == null) {
+        setState(() => _error = 'Please pick when the call should be placed.');
+        return;
+      }
+      if (!scheduledAt.isAfter(DateTime.now())) {
+        setState(() => _error = 'The scheduled call time needs to be in the future.');
+        return;
+      }
     }
     setState(() {
       _starting = true;
@@ -102,6 +152,7 @@ class _BookByCallScreenState extends State<BookByCallScreen> {
         requestedTime: _formatTime(_pickedTime!),
         patientName: profile?.name,
         notes: _notesCtrl.text.trim(),
+        scheduledAt: scheduledAt,
       );
       setState(() => _call = call);
       _startPolling();
@@ -209,6 +260,8 @@ class _BookByCallScreenState extends State<BookByCallScreen> {
     switch (status) {
       case 'completed':
         return Colors.green;
+      case 'scheduled':
+        return Colors.amber;
       case 'no_answer':
       case 'busy':
       case 'failed':
@@ -221,6 +274,10 @@ class _BookByCallScreenState extends State<BookByCallScreen> {
 
   String _statusLabel(AppointmentCall c) {
     switch (c.status) {
+      case 'scheduled':
+        return c.scheduledAt != null
+            ? 'Scheduled \u2014 will call the office on ${_formatDateTime(c.scheduledAt!)}'
+            : 'Scheduled to call automatically.';
       case 'queued':
         return 'Starting the call…';
       case 'ringing':
@@ -326,6 +383,45 @@ class _BookByCallScreenState extends State<BookByCallScreen> {
                   hintText: 'e.g. "prefer a morning slot if that one is taken"',
                 ),
               ),
+              const SizedBox(height: 12),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Schedule this call for later'),
+                subtitle: const Text(
+                  'Instead of calling right now, we\'ll automatically place '
+                  'the call at a date/time you pick \u2014 no need to be in the '
+                  'app when it happens.',
+                  style: TextStyle(fontSize: 12),
+                ),
+                value: _scheduleCall,
+                onChanged: (v) => setState(() => _scheduleCall = v),
+              ),
+              if (_scheduleCall) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.calendar_today, size: 18),
+                        label: Text(_scheduleDate == null
+                            ? 'Call on…'
+                            : _formatDate(_scheduleDate!)),
+                        onPressed: _pickScheduleDate,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.access_time, size: 18),
+                        label: Text(_scheduleTime == null
+                            ? 'Call at…'
+                            : _formatTime(_scheduleTime!)),
+                        onPressed: _pickScheduleTime,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 20),
               if (_error != null) ...[
                 Text(_error!, style: const TextStyle(color: Colors.redAccent)),
@@ -339,28 +435,32 @@ class _BookByCallScreenState extends State<BookByCallScreen> {
                           width: 16, height: 16,
                           child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                         )
-                      : const Icon(Icons.call),
-                  label: Text(_starting ? 'Starting…' : 'Call to book'),
+                      : Icon(_scheduleCall ? Icons.schedule : Icons.call),
+                  label: Text(_starting
+                      ? 'Starting…'
+                      : (_scheduleCall ? 'Schedule call' : 'Call to book')),
                   onPressed: _starting ? null : _startCall,
                 ),
               ),
               const SizedBox(height: 10),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  icon: const Icon(Icons.chat_bubble_outline),
-                  label: const Text('Simulate call instead (free, no real call)'),
-                  onPressed: _starting ? null : _startSimulatedCall,
+              if (!_scheduleCall) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.chat_bubble_outline),
+                    label: const Text('Simulate call instead (free, no real call)'),
+                    onPressed: _starting ? null : _startSimulatedCall,
+                  ),
                 ),
-              ),
-              const Padding(
-                padding: EdgeInsets.only(top: 6),
-                child: Text(
-                  'Simulation runs the same AI, but you type the office\u2019s '
-                  'replies yourself \u2014 no phone call happens and it\u2019s free.',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                const Padding(
+                  padding: EdgeInsets.only(top: 6),
+                  child: Text(
+                    'Simulation runs the same AI, but you type the office\u2019s '
+                    'replies yourself \u2014 no phone call happens and it\u2019s free.',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
                 ),
-              ),
+              ],
             ] else ...[
               if (call.isSimulated)
                 Container(
