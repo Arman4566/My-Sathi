@@ -31,7 +31,13 @@ app.use(cors());
 // Twilio posts webhook data as application/x-www-form-urlencoded, not
 // JSON — needed for the AI phone-call booking feature below.
 app.use(express.urlencoded({ extended: false }));
-app.use(express.json());
+// Default express.json() caps requests at 100kb, which is far too small
+// for the scan-image analysis endpoint below (a compressed photo of an
+// X-ray/ultrasound, base64-encoded, easily runs a few MB). Raised
+// globally rather than per-route since this is the only binary-ish
+// payload the backend accepts and a few MB is not a meaningful DoS
+// surface for an app this size.
+app.use(express.json({ limit: '15mb' }));
 
 // User accounts (signup/login/forgot-password) and per-user data —
 // everything below follows the same pattern, see medicines.js for the
@@ -330,6 +336,98 @@ app.post('/api/summarize-report', async (req, res) => {
       });
     }
     res.status(500).json({ error: 'summarize_failed' });
+  }
+});
+
+// ---------------------------------------------------------------------
+// 4) Scan image analysis ("Sathi AI Scan Insight") — patient uploads a
+//    photo of an X-ray/ultrasound/similar scan and gets back a plain-
+//    language, non-diagnostic description they can save alongside their
+//    other reports.
+//
+// IMPORTANT, READ BEFORE CHANGING THIS PROMPT:
+// This deliberately does NOT try to imitate a real diagnostic-AI
+// radiology product (no invented confidence percentages, no risk grade
+// like "Critical/Severe", no fabricated Grad-CAM heatmap). Gemini is a
+// general vision-language model, not a validated, regulator-reviewed
+// medical imaging classifier — it has no real trained confidence score
+// to report, and a heatmap image would have no actual relationship to
+// what the model attended to. Presenting invented numbers/heatmaps as if
+// they came from a clinically validated system would be actively
+// misleading and could cause real harm (false reassurance from a fake
+// "normal" reading, or panic from a fake "critical" one). This endpoint
+// instead gives careful, hedged, plain-language observations and always
+// pushes the patient toward an actual radiologist/doctor.
+// ---------------------------------------------------------------------
+const SCAN_ANALYSIS_PROMPT = `You are assisting a patient by describing what
+is visible in an uploaded medical scan image (X-ray, ultrasound, or
+similar). You are NOT a radiologist and this is NOT a diagnosis. Follow
+these rules strictly:
+- Describe only general visual observations, in plain everyday language a
+  non-medical person can understand.
+- NEVER state a confidence percentage, probability, or any other invented
+  precision number. You have no validated diagnostic accuracy to report,
+  and a fabricated number would be misleading.
+- NEVER assign an overall risk level (e.g. "critical", "severe", "normal")
+  and NEVER name a specific suspected diagnosis. That judgment belongs to
+  a qualified radiologist/doctor who can examine the patient, not this
+  tool.
+- If something looks like it could be worth a closer look, describe what
+  is visually observed (e.g. "an area of increased density is visible in
+  the lower-left region") neutrally, without naming a suspected disease.
+- If the image is blurry, poorly lit, cropped, not actually a recognizable
+  medical scan, or otherwise hard to assess, say so plainly instead of
+  guessing.
+- Always close with a recommendation to share the actual image with a
+  qualified doctor or radiologist, and suggest ONE general type of
+  specialist as a starting point only (e.g. "Pulmonologist",
+  "Orthopedist", "Radiologist", "General Physician") — never a personal
+  referral to a named person.
+- Return ONLY valid JSON, no prose, no markdown fences, in this exact
+  shape:
+{"scanTypeGuess":"","imageQualityNote":"","overview":"","observations":["",""],"suggestedSpecialist":"","nextSteps":["",""]}
+Keep it concise: overview under 60 words, at most 5 short observations, at
+most 4 next steps.`;
+
+app.post('/api/analyze-scan', async (req, res) => {
+  try {
+    const { imageBase64, mimeType, scanType, notes } = req.body;
+    if (!imageBase64 || !mimeType) {
+      return res.status(400).json({ error: 'missing_image' });
+    }
+
+    const userNote =
+      `Scan type provided by patient: ${scanType || 'not specified'}.` +
+      (notes ? ` Patient note: ${notes}` : '');
+
+    const response = await generateWithRetry({
+      model: PRIMARY_MODEL,
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { text: `${userNote}\n\nDescribe what is visible in this scan image.` },
+            { inlineData: { mimeType, data: imageBase64 } },
+          ],
+        },
+      ],
+      config: {
+        systemInstruction: SCAN_ANALYSIS_PROMPT,
+        responseMimeType: 'application/json',
+      },
+    });
+
+    const parsed = JSON.parse(response.text);
+    res.json({ analysis: parsed });
+  } catch (err) {
+    console.error(err);
+    if (isOverloadedError(err)) {
+      return res.status(503).json({
+        error: 'ai_overloaded',
+        message: 'The AI service is busy right now. Please try again in a moment.',
+      });
+    }
+    res.status(500).json({ error: 'analyze_failed', message: err.message });
   }
 });
 

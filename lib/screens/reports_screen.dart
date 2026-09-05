@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/medical_report.dart';
 import '../services/database_service.dart';
 import 'report_upload_screen.dart';
+import 'scan_analysis_screen.dart';
 import 'report_detail_screen.dart';
 import '../services/settings_service.dart';
 import '../services/app_text.dart';
@@ -67,12 +68,48 @@ class _ReportsScreenState extends State<ReportsScreen> {
               },
             ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () async {
-          await Navigator.push(
-              context, MaterialPageRoute(builder: (_) => const ReportUploadScreen()));
-          _load();
-        },
+        onPressed: () => _showAddOptions(context, lang),
         child: const Icon(Icons.add),
+      ),
+    );
+  }
+
+  Future<void> _showAddOptions(BuildContext context, String lang) async {
+    await showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            ListTile(
+              leading: const Icon(Icons.description_outlined, color: Color(0xFF5B7CFA)),
+              title: Text(AppText.t('upload_report', lang)),
+              subtitle: Text(AppText.t('upload_report_subtitle', lang)),
+              onTap: () async {
+                Navigator.pop(ctx);
+                await Navigator.push(
+                    context, MaterialPageRoute(builder: (_) => const ReportUploadScreen()));
+                _load();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.health_and_safety_outlined, color: Color(0xFF5B7CFA)),
+              title: Text(AppText.t('scan_insight_title', lang)),
+              subtitle: Text(AppText.t('scan_insight_fab_subtitle', lang)),
+              onTap: () async {
+                Navigator.pop(ctx);
+                await Navigator.push(
+                    context, MaterialPageRoute(builder: (_) => const ScanAnalysisScreen()));
+                _load();
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
       ),
     );
   }

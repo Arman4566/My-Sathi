@@ -227,6 +227,24 @@ class AppText {
       'could_not_read_photo_text': 'Could not read text from this photo.',
       'report_dated_title': 'Report — {date}',
       'upload_report': 'Upload report',
+      'upload_report_subtitle': 'Lab result, prescription, or doctor\u2019s note (text)',
+      'scan_insight_fab_subtitle': 'X-ray, ultrasound, or similar scan (image)',
+      'scan_insight_title': 'Sathi AI Scan Insight',
+      'scan_insight_title_suffix': 'AI Scan Insight',
+      'scan_insight_intro':
+          'Upload a photo of your X-ray, ultrasound, or similar scan and Sathi will describe what it sees in plain language. This is an AI-assisted description, not a diagnosis \u2014 always have the actual scan reviewed by a qualified doctor or radiologist.',
+      'scan_insight_notes': 'Anything you want to mention? (optional)',
+      'scan_insight_notes_hint': 'e.g. "left knee, after a fall"',
+      'scan_insight_analyzing': 'Looking at your scan\u2026',
+      'scan_analysis_unavailable':
+          'Couldn\u2019t analyze this image right now. You can still save it and try again later.',
+      'scan_insight_quality': 'Image quality',
+      'scan_insight_overview': 'Overview',
+      'scan_insight_observations': 'What we noticed',
+      'scan_insight_specialist': 'A general starting point',
+      'scan_insight_next_steps': 'Suggested next steps',
+      'scan_insight_disclaimer':
+          'This is an AI-assisted description, not a diagnosis. Please share the actual scan with a qualified doctor or radiologist for proper evaluation.',
       'title_hint': 'Title (e.g. "Blood test — June")',
       'summary_disclaimer':
           'This is a plain-language summary, not a diagnosis. Discuss anything '
@@ -476,6 +494,24 @@ class AppText {
       'could_not_read_photo_text': 'इस फ़ोटो से टेक्स्ट नहीं पढ़ा जा सका।',
       'report_dated_title': 'रिपोर्ट — {date}',
       'upload_report': 'रिपोर्ट अपलोड करें',
+      'upload_report_subtitle': 'लैब रिपोर्ट, पर्चा या डॉक्टर का नोट (टेक्स्ट)',
+      'scan_insight_fab_subtitle': 'एक्स-रे, अल्ट्रासाउंड या इसी तरह का स्कैन (तस्वीर)',
+      'scan_insight_title': 'Sathi AI स्कैन इनसाइट',
+      'scan_insight_title_suffix': 'AI स्कैन इनसाइट',
+      'scan_insight_intro':
+          'अपने एक्स-रे, अल्ट्रासाउंड या इसी तरह के स्कैन की फोटो अपलोड करें और Sathi सरल भाषा में बताएगा कि उसमें क्या दिख रहा है। यह एक AI-सहायता प्राप्त विवरण है, निदान नहीं \u2014 हमेशा असली स्कैन किसी योग्य डॉक्टर या रेडियोलॉजिस्ट को दिखाएं।',
+      'scan_insight_notes': 'कुछ और बताना चाहेंगे? (वैकल्पिक)',
+      'scan_insight_notes_hint': 'जैसे "बाएं घुटने में, गिरने के बाद"',
+      'scan_insight_analyzing': 'आपका स्कैन देखा जा रहा है\u2026',
+      'scan_analysis_unavailable':
+          'अभी इस तस्वीर का विश्लेषण नहीं हो सका। आप इसे सहेज सकते हैं और बाद में फिर कोशिश कर सकते हैं।',
+      'scan_insight_quality': 'तस्वीर की गुणवत्ता',
+      'scan_insight_overview': 'सारांश',
+      'scan_insight_observations': 'हमने क्या देखा',
+      'scan_insight_specialist': 'शुरुआत के लिए एक सामान्य सुझाव',
+      'scan_insight_next_steps': 'सुझाए गए अगले कदम',
+      'scan_insight_disclaimer':
+          'यह एक AI-सहायता प्राप्त विवरण है, निदान नहीं। कृपया सही मूल्यांकन के लिए असली स्कैन किसी योग्य डॉक्टर या रेडियोलॉजिस्ट को दिखाएं।',
       'title_hint': 'शीर्षक (जैसे "ब्लड टेस्ट — जून")',
       'summary_disclaimer':
           'यह आसान भाषा में सारांश है, निदान नहीं। असामान्य बताई गई किसी भी बात '

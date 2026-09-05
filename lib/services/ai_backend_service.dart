@@ -146,4 +146,107 @@ class AiBackendService {
     final data = jsonDecode(res.body) as Map<String, dynamic>;
     return data['summary'] as String;
   }
+
+  /// "Sathi AI Scan Insight" — sends a photo of an X-ray/ultrasound/similar
+  /// scan to the backend for a plain-language description. See
+  /// SCAN_ANALYSIS_PROMPT in server.js for exactly why this deliberately
+  /// never returns a confidence percentage, a risk grade, or a diagnosis —
+  /// short version: Gemini isn't a validated diagnostic imaging model, and
+  /// faking that precision would be actively misleading.
+  Future<ScanAnalysis> analyzeScan({
+    required String imageBase64,
+    required String mimeType,
+    String? scanType,
+    String? notes,
+  }) async {
+    final res = await http.post(
+      Uri.parse('$_baseUrl/api/analyze-scan'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'imageBase64': imageBase64,
+        'mimeType': mimeType,
+        'scanType': scanType,
+        'notes': notes,
+      }),
+    );
+
+    if (res.statusCode != 200) {
+      throw Exception(
+          _extractErrorMessage(res, 'Scan analysis failed: ${res.statusCode}'));
+    }
+
+    final data = jsonDecode(res.body) as Map<String, dynamic>;
+    return ScanAnalysis.fromJson(data['analysis'] as Map<String, dynamic>);
+  }
+}
+
+/// Result of "Sathi AI Scan Insight" (see analyzeScan above). Intentionally
+/// has NO confidence score and NO risk level field — see the long comment
+/// on SCAN_ANALYSIS_PROMPT in server.js for why those are deliberately
+/// left out rather than fabricated.
+class ScanAnalysis {
+  final String scanTypeGuess;
+  final String imageQualityNote;
+  final String overview;
+  final List<String> observations;
+  final String suggestedSpecialist;
+  final List<String> nextSteps;
+
+  ScanAnalysis({
+    required this.scanTypeGuess,
+    required this.imageQualityNote,
+    required this.overview,
+    required this.observations,
+    required this.suggestedSpecialist,
+    required this.nextSteps,
+  });
+
+  factory ScanAnalysis.fromJson(Map<String, dynamic> j) {
+    return ScanAnalysis(
+      scanTypeGuess: j['scanTypeGuess'] as String? ?? '',
+      imageQualityNote: j['imageQualityNote'] as String? ?? '',
+      overview: j['overview'] as String? ?? '',
+      observations:
+          (j['observations'] as List?)?.map((e) => e.toString()).toList() ?? [],
+      suggestedSpecialist: j['suggestedSpecialist'] as String? ?? '',
+      nextSteps: (j['nextSteps'] as List?)?.map((e) => e.toString()).toList() ?? [],
+    );
+  }
+
+  /// Formatted for saving into MedicalReport.summary / .rawText so it
+  /// reads well in the existing ReportDetailScreen (which just renders
+  /// these as plain Text — no special "scan report" UI needed there).
+  String toDisplayText() {
+    final b = StringBuffer();
+    b.writeln('🩺 Sathi AI Scan Insight');
+    if (scanTypeGuess.isNotEmpty) b.writeln('Scan type: $scanTypeGuess');
+    b.writeln();
+    b.writeln(overview);
+    if (imageQualityNote.isNotEmpty) {
+      b.writeln();
+      b.writeln('Image quality note: $imageQualityNote');
+    }
+    if (observations.isNotEmpty) {
+      b.writeln();
+      b.writeln('What we noticed:');
+      for (final o in observations) {
+        b.writeln('• $o');
+      }
+    }
+    if (suggestedSpecialist.isNotEmpty) {
+      b.writeln();
+      b.writeln('A general starting point if you want to follow up: $suggestedSpecialist');
+    }
+    if (nextSteps.isNotEmpty) {
+      b.writeln();
+      b.writeln('Suggested next steps:');
+      for (final s in nextSteps) {
+        b.writeln('• $s');
+      }
+    }
+    b.writeln();
+    b.writeln(
+        '⚠️ This is an AI-assisted description, not a diagnosis. Please share the actual scan with a qualified doctor or radiologist for proper evaluation.');
+    return b.toString().trim();
+  }
 }
