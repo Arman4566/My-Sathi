@@ -104,9 +104,19 @@ router.post('/analyze', async (req, res) => {
       const upstream = await fetch(`${serviceUrl.replace(/\/$/, '')}/analyze`, {
         method: 'POST',
         body: form,
-        // The model service can genuinely take several seconds (CPU
-        // inference + Grad-CAM), so this is deliberately generous.
-        signal: AbortSignal.timeout(60000),
+        // Deliberately generous. Free-tier hosts (Render's free web
+        // services included) spin down when idle and can take 50+
+        // seconds just to wake up on the next request, BEFORE any
+        // actual model inference time is added on top — a 60s timeout
+        // here was cutting that too close and caused real, reproducible
+        // "could not reach the X-ray AI model service" failures on a
+        // cold instance. 170s gives real headroom above a ~50-60s cold
+        // start plus a few seconds of CPU inference, while still being
+        // comfortably under typical platform-level request limits
+        // (~180s+ on most hosts). If you're on a paid/always-on tier
+        // for the model service, this basically never gets used, so
+        // there's no real downside to it being generous.
+        signal: AbortSignal.timeout(170000),
       });
       if (!upstream.ok) {
         const text = await upstream.text().catch(() => '');
@@ -119,9 +129,13 @@ router.post('/analyze', async (req, res) => {
       modelResponse = await upstream.json();
     } catch (fetchErr) {
       console.error('Could not reach X-ray model service:', fetchErr);
+      const isTimeout = fetchErr?.name === 'TimeoutError' || fetchErr?.name === 'AbortError';
       return res.status(502).json({
         error: 'xray_service_unreachable',
-        message: 'Could not reach the X-ray AI model service. Please try again in a moment.',
+        message: isTimeout
+          ? 'The X-ray AI model service took too long to respond \u2014 if it just woke up from being idle ' +
+            '(free-tier hosting spins down when unused), please try again now that it\u2019s warm.'
+          : 'Could not reach the X-ray AI model service. Please try again in a moment.',
       });
     }
 
