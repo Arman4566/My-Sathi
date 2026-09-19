@@ -42,6 +42,11 @@ dependencies:
   # Networking (for chatbot / AI parsing backend calls)
   http: ^1.2.1
 
+  # Opening/sharing downloaded files (used for the X-ray AI Diagnostic
+  # Report PDF download/share buttons)
+  open_file: ^3.3.2
+  share_plus: ^7.2.2
+
   # Voice input for the chatbot
   speech_to_text: ^7.0.0
 

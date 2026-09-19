@@ -1,0 +1,16 @@
+# CPU-only PyTorch is intentional — this service only ever processes one
+# image at a time on demand, so a GPU isn't needed and CPU wheels are
+# much smaller/faster to deploy.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.2.2
+torchvision==0.17.2
+
+torchxrayvision==1.2.3
+opencv-python-headless==4.9.0.80
+scikit-image==0.22.0
+numpy==1.26.4
+pillow==10.3.0
+
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+python-multipart==0.0.9

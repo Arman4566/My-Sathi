@@ -33,7 +33,11 @@ class _ScanAnalysisScreenState extends State<ScanAnalysisScreen> {
   final _titleCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
 
-  static const _scanTypes = ['X-ray', 'Ultrasound', 'Other scan'];
+  // X-ray now has its own dedicated real-model flow (see
+  // XrayReportScreen / xray_ai_service) reachable from the Reports
+  // screen's "+" menu — this screen covers everything that doesn't have
+  // a real pretrained model available (ultrasound, and anything else).
+  static const _scanTypes = ['Ultrasound', 'Other scan'];
   String _scanType = _scanTypes.first;
 
   File? _image;

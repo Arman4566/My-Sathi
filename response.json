@@ -1,0 +1,1 @@
+{"detail":"model_inference_failed: cannot register a hook on a tensor that doesn't require gradient"}

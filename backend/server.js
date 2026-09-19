@@ -11,6 +11,7 @@ const medicalReportsRouter = require('./medical_reports');
 const healthRecordsRouter = require('./health_records');
 const careContactsRouter = require('./care_contacts');
 const medicineDosesRouter = require('./medicine_doses');
+const xrayReportsRouter = require('./xray_reports');
 const { router: appointmentCallsRouter, twilioWebhookRouter, startScheduledCallPoller } = require('./appointment_calls');
 const { startWhatsAppReminderPoller } = require('./whatsapp_reminders');
 
@@ -52,6 +53,9 @@ app.use('/api/health-records', healthRecordsRouter);
 // alerts, and the endpoint the app hits to confirm a dose was taken.
 app.use('/api/care-contacts', careContactsRouter);
 app.use('/api/medicine-doses', medicineDosesRouter);
+// Chest X-ray "AI Diagnostic Report" — real pretrained-model pipeline,
+// see xray_reports.js and xray_ai_service/README.md.
+app.use('/api/xray-reports', xrayReportsRouter);
 // Authenticated endpoints the Flutter app calls (start a call, poll status).
 app.use('/api/appointment-calls', appointmentCallsRouter);
 // Unauthenticated webhooks Twilio itself calls back into during a live

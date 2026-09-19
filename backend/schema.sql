@@ -188,3 +188,22 @@ CREATE TABLE IF NOT EXISTS medicine_doses (
 -- sent for this appointment, so the poller (which runs every few
 -- minutes) doesn't send it more than once.
 ALTER TABLE appointments ADD COLUMN IF NOT EXISTS whatsapp_reminder_sent_at TIMESTAMPTZ;
+
+-- "Sathi AI Diagnostic Report" — chest X-ray reports from the real
+-- pretrained-model pipeline (see xray_ai_service/ and
+-- backend/xray_reports.js). The generated PDF is stored directly as
+-- bytea rather than on local disk, since local disk isn't durable on
+-- most hosting platforms (e.g. Render/Railway wipe it on redeploy) and
+-- this keeps the feature working anywhere the rest of the backend runs,
+-- with no separate file storage to set up.
+CREATE TABLE IF NOT EXISTS xray_reports (
+  id UUID PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title TEXT,
+  primary_finding TEXT,
+  confidence REAL,
+  confidence_band TEXT,
+  model_id TEXT,
+  pdf_data BYTEA NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now()
+);

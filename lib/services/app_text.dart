@@ -228,11 +228,11 @@ class AppText {
       'report_dated_title': 'Report — {date}',
       'upload_report': 'Upload report',
       'upload_report_subtitle': 'Lab result, prescription, or doctor\u2019s note (text)',
-      'scan_insight_fab_subtitle': 'X-ray, ultrasound, or similar scan (image)',
+      'scan_insight_fab_subtitle': 'Ultrasound or other scan (plain-language description)',
       'scan_insight_title': 'Sathi AI Scan Insight',
       'scan_insight_title_suffix': 'AI Scan Insight',
       'scan_insight_intro':
-          'Upload a photo of your X-ray, ultrasound, or similar scan and Sathi will describe what it sees in plain language. This is an AI-assisted description, not a diagnosis \u2014 always have the actual scan reviewed by a qualified doctor or radiologist.',
+          'Upload a photo of an ultrasound or similar scan and Sathi will describe what it sees in plain language. This is an AI-assisted description, not a diagnosis \u2014 always have the actual scan reviewed by a qualified doctor or radiologist. (Chest X-rays get a fuller AI Diagnostic Report instead \u2014 see the option above.)',
       'scan_insight_notes': 'Anything you want to mention? (optional)',
       'scan_insight_notes_hint': 'e.g. "left knee, after a fall"',
       'scan_insight_analyzing': 'Looking at your scan\u2026',
@@ -245,6 +245,20 @@ class AppText {
       'scan_insight_next_steps': 'Suggested next steps',
       'scan_insight_disclaimer':
           'This is an AI-assisted description, not a diagnosis. Please share the actual scan with a qualified doctor or radiologist for proper evaluation.',
+      'xray_report_title': 'Sathi AI Diagnostic Report',
+      'xray_report_fab_subtitle': 'Chest X-ray \u2014 real pretrained model + confidence scores',
+      'xray_report_intro':
+          'Upload a chest X-ray photo and Sathi will run a real pretrained AI model (not just a description) to get genuine confidence scores per condition and a Grad-CAM heatmap, packaged as a downloadable PDF report. This model is research-grade and not clinically validated \u2014 always have the actual X-ray reviewed by a qualified doctor or radiologist.',
+      'xray_report_analyzing': 'Running the AI model on your X-ray\u2026 this can take up to a minute.',
+      'xray_report_generate': 'Generate AI Diagnostic Report',
+      'xray_report_download': 'Download PDF',
+      'xray_report_share': 'Share PDF',
+      'xray_report_primary_finding': 'Primary finding',
+      'xray_report_confidence': 'Model confidence',
+      'xray_report_past_reports': 'Past reports',
+      'xray_report_no_reports': 'No AI Diagnostic Reports yet.',
+      'xray_report_not_configured':
+          'The chest X-ray AI model service isn\u2019t set up on this backend yet.',
       'title_hint': 'Title (e.g. "Blood test — June")',
       'summary_disclaimer':
           'This is a plain-language summary, not a diagnosis. Discuss anything '
@@ -495,11 +509,11 @@ class AppText {
       'report_dated_title': 'रिपोर्ट — {date}',
       'upload_report': 'रिपोर्ट अपलोड करें',
       'upload_report_subtitle': 'लैब रिपोर्ट, पर्चा या डॉक्टर का नोट (टेक्स्ट)',
-      'scan_insight_fab_subtitle': 'एक्स-रे, अल्ट्रासाउंड या इसी तरह का स्कैन (तस्वीर)',
+      'scan_insight_fab_subtitle': 'अल्ट्रासाउंड या अन्य स्कैन (सरल भाषा में विवरण)',
       'scan_insight_title': 'Sathi AI स्कैन इनसाइट',
       'scan_insight_title_suffix': 'AI स्कैन इनसाइट',
       'scan_insight_intro':
-          'अपने एक्स-रे, अल्ट्रासाउंड या इसी तरह के स्कैन की फोटो अपलोड करें और Sathi सरल भाषा में बताएगा कि उसमें क्या दिख रहा है। यह एक AI-सहायता प्राप्त विवरण है, निदान नहीं \u2014 हमेशा असली स्कैन किसी योग्य डॉक्टर या रेडियोलॉजिस्ट को दिखाएं।',
+          'अल्ट्रासाउंड या इसी तरह के स्कैन की फोटो अपलोड करें और Sathi सरल भाषा में बताएगा कि उसमें क्या दिख रहा है। यह एक AI-सहायता प्राप्त विवरण है, निदान नहीं \u2014 हमेशा असली स्कैन किसी योग्य डॉक्टर या रेडियोलॉजिस्ट को दिखाएं। (चेस्ट एक्स-रे के लिए ऊपर पूरी AI डायग्नोस्टिक रिपोर्ट का विकल्प देखें।)',
       'scan_insight_notes': 'कुछ और बताना चाहेंगे? (वैकल्पिक)',
       'scan_insight_notes_hint': 'जैसे "बाएं घुटने में, गिरने के बाद"',
       'scan_insight_analyzing': 'आपका स्कैन देखा जा रहा है\u2026',
@@ -512,6 +526,20 @@ class AppText {
       'scan_insight_next_steps': 'सुझाए गए अगले कदम',
       'scan_insight_disclaimer':
           'यह एक AI-सहायता प्राप्त विवरण है, निदान नहीं। कृपया सही मूल्यांकन के लिए असली स्कैन किसी योग्य डॉक्टर या रेडियोलॉजिस्ट को दिखाएं।',
+      'xray_report_title': 'Sathi AI डायग्नोस्टिक रिपोर्ट',
+      'xray_report_fab_subtitle': 'चेस्ट एक्स-रे \u2014 वास्तविक प्रीट्रेंड मॉडल + कॉन्फिडेंस स्कोर',
+      'xray_report_intro':
+          'चेस्ट एक्स-रे की फोटो अपलोड करें और Sathi एक वास्तविक प्रीट्रेंड AI मॉडल चलाएगा (केवल विवरण नहीं) ताकि हर स्थिति के लिए असली कॉन्फिडेंस स्कोर और एक Grad-CAM हीटमैप मिले, जो डाउनलोड करने योग्य PDF रिपोर्ट के रूप में तैयार होगा। यह मॉडल रिसर्च-ग्रेड है और चिकित्सकीय रूप से मान्य नहीं है \u2014 हमेशा असली एक्स-रे किसी योग्य डॉक्टर या रेडियोलॉजिस्ट को दिखाएं।',
+      'xray_report_analyzing': 'आपके एक्स-रे पर AI मॉडल चल रहा है\u2026 इसमें एक मिनट तक लग सकता है।',
+      'xray_report_generate': 'AI डायग्नोस्टिक रिपोर्ट बनाएं',
+      'xray_report_download': 'PDF डाउनलोड करें',
+      'xray_report_share': 'PDF शेयर करें',
+      'xray_report_primary_finding': 'मुख्य निष्कर्ष',
+      'xray_report_confidence': 'मॉडल कॉन्फिडेंस',
+      'xray_report_past_reports': 'पुरानी रिपोर्टें',
+      'xray_report_no_reports': 'अभी तक कोई AI डायग्नोस्टिक रिपोर्ट नहीं है।',
+      'xray_report_not_configured':
+          'इस बैकएंड पर चेस्ट एक्स-रे AI मॉडल सेवा अभी सेट अप नहीं है।',
       'title_hint': 'शीर्षक (जैसे "ब्लड टेस्ट — जून")',
       'summary_disclaimer':
           'यह आसान भाषा में सारांश है, निदान नहीं। असामान्य बताई गई किसी भी बात '

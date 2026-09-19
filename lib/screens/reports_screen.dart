@@ -4,6 +4,7 @@ import '../models/medical_report.dart';
 import '../services/database_service.dart';
 import 'report_upload_screen.dart';
 import 'scan_analysis_screen.dart';
+import 'xray_report_screen.dart';
 import 'report_detail_screen.dart';
 import '../services/settings_service.dart';
 import '../services/app_text.dart';
@@ -93,6 +94,17 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 Navigator.pop(ctx);
                 await Navigator.push(
                     context, MaterialPageRoute(builder: (_) => const ReportUploadScreen()));
+                _load();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.health_and_safety_outlined, color: Color(0xFF3D5AFE)),
+              title: Text(AppText.t('xray_report_title', lang)),
+              subtitle: Text(AppText.t('xray_report_fab_subtitle', lang)),
+              onTap: () async {
+                Navigator.pop(ctx);
+                await Navigator.push(
+                    context, MaterialPageRoute(builder: (_) => const XrayReportScreen()));
                 _load();
               },
             ),
