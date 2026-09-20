@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../models/user_profile.dart';
 import '../services/auth_service.dart';
+import '../services/local_file_storage_service.dart';
 import '../services/settings_service.dart';
 import '../services/app_text.dart';
 
@@ -38,8 +39,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (picked == null) return;
 
     try {
+      // Persist out of the OS temp location — see
+      // local_file_storage_service.dart for why. Named by the user's own
+      // id so re-picking a new photo just overwrites the old file.
+      final ext = picked.path.contains('.') ? picked.path.split('.').last : 'jpg';
+      final persistentPath = await LocalFileStorageService.instance.savePickedFile(
+          File(picked.path),
+          subfolder: 'profile',
+          filename: '${_profile!.id}.$ext');
       final updated = await AuthService.instance
-          .updateProfile(_profile!.copyWith(photoPath: picked.path));
+          .updateProfile(_profile!.copyWith(photoPath: persistentPath));
       setState(() => _profile = updated);
     } catch (e) {
       if (mounted) {

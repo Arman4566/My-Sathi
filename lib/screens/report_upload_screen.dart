@@ -7,6 +7,7 @@ import '../models/medical_report.dart';
 import '../services/database_service.dart';
 import '../services/ocr_service.dart';
 import '../services/ai_backend_service.dart';
+import '../services/local_file_storage_service.dart';
 import '../services/settings_service.dart';
 import '../services/app_text.dart';
 
@@ -64,13 +65,23 @@ class _ReportUploadScreenState extends State<ReportUploadScreen> {
   Future<void> _save() async {
     if (_image == null) return;
     final lang = context.read<SettingsService>().languageCode;
+    final id = const Uuid().v4();
+
+    // Copy the picked photo out of the OS temp/cache location (which can
+    // be cleared at any time) into the app's persistent documents
+    // storage, and save THAT path — this is what makes the photo still
+    // show up after an app restart or re-login on the same device.
+    final ext = _image!.path.contains('.') ? _image!.path.split('.').last : 'jpg';
+    final persistentPath = await LocalFileStorageService.instance
+        .savePickedFile(_image!, subfolder: 'reports', filename: '$id.$ext');
+
     final report = MedicalReport(
-      id: const Uuid().v4(),
+      id: id,
       title: _titleCtrl.text.trim().isEmpty
           ? AppText.t('report_dated_title', lang).replaceFirst('{date}',
               '${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year}')
           : _titleCtrl.text.trim(),
-      filePath: _image!.path,
+      filePath: persistentPath,
       rawText: _rawText,
       summary: _summary ?? '',
       uploadedDate: DateTime.now(),

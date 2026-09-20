@@ -8,6 +8,7 @@ import '../models/user_profile.dart';
 import '../models/health_record.dart';
 import '../models/medical_report.dart';
 import '../models/care_contact.dart';
+import '../models/xray_report.dart';
 import 'cloud_sync_service.dart';
 
 /// Single source of truth for all local persistence.
@@ -32,7 +33,7 @@ class DatabaseService {
 
     return openDatabase(
       path,
-      version: 5,
+      version: 6,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE medicines (
@@ -124,6 +125,19 @@ class DatabaseService {
         ''');
         await db.execute(
             'CREATE UNIQUE INDEX medicine_doses_slot ON medicine_doses (medicineId, scheduledFor)');
+        await db.execute('''
+          CREATE TABLE xray_reports_local (
+            id TEXT PRIMARY KEY,
+            title TEXT,
+            primaryFinding TEXT,
+            confidence REAL,
+            confidenceBand TEXT,
+            modelId TEXT,
+            createdAt TEXT,
+            localPdfPath TEXT,
+            localPhotoPath TEXT
+          )
+        ''');
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -204,6 +218,26 @@ class DatabaseService {
           ''');
           await db.execute(
               'CREATE UNIQUE INDEX IF NOT EXISTS medicine_doses_slot ON medicine_doses (medicineId, scheduledFor)');
+        }
+        if (oldVersion < 6) {
+          // Local cache of X-ray AI Diagnostic Reports (photo + generated
+          // PDF saved to this device's persistent storage) so past
+          // reports still show up after an app restart or re-login,
+          // without needing the network. See LocalFileStorageService and
+          // XrayReportScreen.
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS xray_reports_local (
+              id TEXT PRIMARY KEY,
+              title TEXT,
+              primaryFinding TEXT,
+              confidence REAL,
+              confidenceBand TEXT,
+              modelId TEXT,
+              createdAt TEXT,
+              localPdfPath TEXT,
+              localPhotoPath TEXT
+            )
+          ''');
         }
       },
     );
@@ -459,5 +493,30 @@ class DatabaseService {
       whereArgs: [medicineId, scheduledFor.toIso8601String()],
     );
     return rows.isNotEmpty;
+  }
+
+  // ---------- X-ray AI Diagnostic Report local cache ----------
+  //
+  // Local-first storage for XrayReportScreen's "Past reports" list: the
+  // photo and generated PDF are copied to this device's persistent
+  // storage (see LocalFileStorageService) and tracked here, so the list
+  // populates instantly and works offline after an app restart or
+  // re-login — no need to hit the backend just to show what's already
+  // sitting on the device.
+  Future<void> saveXrayReportLocal(XrayReport report) async {
+    final db = await database;
+    await db.insert('xray_reports_local', report.toLocalMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<List<XrayReport>> getXrayReportsLocal() async {
+    final db = await database;
+    final rows = await db.query('xray_reports_local', orderBy: 'createdAt DESC');
+    return rows.map((r) => XrayReport.fromLocalMap(r)).toList();
+  }
+
+  Future<void> deleteXrayReportLocal(String id) async {
+    final db = await database;
+    await db.delete('xray_reports_local', where: 'id = ?', whereArgs: [id]);
   }
 }

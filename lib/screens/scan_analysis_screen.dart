@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import '../models/medical_report.dart';
 import '../services/database_service.dart';
 import '../services/ai_backend_service.dart';
+import '../services/local_file_storage_service.dart';
 import '../services/settings_service.dart';
 import '../services/app_text.dart';
 
@@ -95,12 +96,20 @@ class _ScanAnalysisScreenState extends State<ScanAnalysisScreen> {
     if (_image == null || _analysis == null) return;
     final lang = context.read<SettingsService>().languageCode;
     final text = _analysis!.toDisplayText();
+    final id = const Uuid().v4();
+
+    // Persist the photo out of the temp picker location — see
+    // report_upload_screen.dart's _save() for why this matters.
+    final ext = _image!.path.contains('.') ? _image!.path.split('.').last : 'jpg';
+    final persistentPath = await LocalFileStorageService.instance
+        .savePickedFile(_image!, subfolder: 'scan_insight', filename: '$id.$ext');
+
     final report = MedicalReport(
-      id: const Uuid().v4(),
+      id: id,
       title: _titleCtrl.text.trim().isEmpty
           ? '$_scanType \u2014 ${AppText.t('scan_insight_title_suffix', lang)}'
           : _titleCtrl.text.trim(),
-      filePath: _image!.path,
+      filePath: persistentPath,
       rawText: text,
       summary: text,
       uploadedDate: DateTime.now(),

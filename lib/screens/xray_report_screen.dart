@@ -2,12 +2,13 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:open_file/open_file.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../models/xray_report.dart';
 import '../services/xray_report_service.dart';
 import '../services/auth_service.dart';
+import '../services/database_service.dart';
+import '../services/local_file_storage_service.dart';
 import '../services/settings_service.dart';
 import '../services/app_text.dart';
 
@@ -42,11 +43,29 @@ class _XrayReportScreenState extends State<XrayReportScreen> {
   }
 
   Future<void> _loadPastReports() async {
+    // Local-first: instant, and works offline — this is what makes past
+    // reports still show up after an app restart or re-login on this
+    // device (see LocalFileStorageService / DatabaseService's
+    // xray_reports_local table).
+    final local = await DatabaseService.instance.getXrayReportsLocal();
+    if (mounted) setState(() { _pastReports = local; _loadingPast = false; });
+
+    // Then reconcile with the backend in the background: pick up any
+    // reports generated on a different device that aren't cached on this
+    // one yet (shown with no local copy until opened, which caches them
+    // here for next time — see _openPastReport).
     try {
-      final reports = await XrayReportService.instance.listReports();
-      if (mounted) setState(() { _pastReports = reports; _loadingPast = false; });
+      final remote = await XrayReportService.instance.listReports();
+      final localIds = local.map((r) => r.id).toSet();
+      final onlyRemote = remote.where((r) => !localIds.contains(r.id)).toList();
+      if (onlyRemote.isNotEmpty && mounted) {
+        setState(() {
+          _pastReports = [..._pastReports, ...onlyRemote]
+            ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        });
+      }
     } catch (_) {
-      if (mounted) setState(() => _loadingPast = false);
+      // Offline or backend unreachable — the local list above still shows.
     }
   }
 
@@ -80,7 +99,40 @@ class _XrayReportScreenState extends State<XrayReportScreen> {
         mimeType: _mimeTypeFor(_image!.path),
         patientName: profile?.name,
       );
-      setState(() => _result = result);
+
+      // Save the PDF and the source photo to this device's persistent
+      // storage right away — this (plus the xray_reports_local DB row)
+      // is what makes the report still show up, with its PDF openable,
+      // after an app restart or re-login on this device.
+      final localPdfPath = await LocalFileStorageService.instance.saveBytes(
+        result.pdfBytes,
+        subfolder: 'xray_reports',
+        filename: '${result.report.id}.pdf',
+      );
+      String? localPhotoPath;
+      try {
+        final ext = _image!.path.contains('.') ? _image!.path.split('.').last : 'jpg';
+        localPhotoPath = await LocalFileStorageService.instance.savePickedFile(
+          _image!,
+          subfolder: 'xray_photos',
+          filename: '${result.report.id}.$ext',
+        );
+      } catch (_) {
+        // Non-fatal — the PDF itself is the important artifact; losing
+        // the source photo copy shouldn't block anything.
+      }
+
+      final reportWithLocal = result.report.copyWith(
+        localPdfPath: localPdfPath,
+        localPhotoPath: localPhotoPath,
+      );
+      await DatabaseService.instance.saveXrayReportLocal(reportWithLocal);
+
+      setState(() => _result = XrayAnalysisResult(
+            report: reportWithLocal,
+            warnings: result.warnings,
+            pdfBytes: result.pdfBytes,
+          ));
       _loadPastReports();
     } catch (e) {
       setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
@@ -89,33 +141,37 @@ class _XrayReportScreenState extends State<XrayReportScreen> {
     }
   }
 
-  Future<File> _writePdfToTemp(List<int> bytes, String title) async {
-    final dir = await getTemporaryDirectory();
-    final safeName = title.replaceAll(RegExp(r'[^a-zA-Z0-9 _-]'), '').trim();
-    final file = File('${dir.path}/${safeName.isEmpty ? 'sathi-xray-report' : safeName}.pdf');
-    await file.writeAsBytes(bytes, flush: true);
-    return file;
+  Future<void> _openPdfFile(String path) async {
+    await OpenFile.open(path);
   }
 
-  Future<void> _openPdf(List<int> bytes, String title) async {
-    final file = await _writePdfToTemp(bytes, title);
-    await OpenFile.open(file.path);
-  }
-
-  Future<void> _sharePdf(List<int> bytes, String title) async {
-    final file = await _writePdfToTemp(bytes, title);
+  Future<void> _sharePdfFile(String path, String title) async {
     // Share.shareXFiles is the long-stable share_plus API (available
     // since early 3.x releases through the 7.x/8.x line this app is
     // pinned to) — deliberately not using the newer SharePlus.instance
     // unified API added in share_plus 10+, since pubspec.yaml pins
     // ^7.2.2 and that newer API isn't available on this version.
-    await Share.shareXFiles([XFile(file.path)], text: title);
+    await Share.shareXFiles([XFile(path)], text: title);
   }
 
   Future<void> _openPastReport(XrayReport report) async {
     try {
-      final bytes = await XrayReportService.instance.downloadPdf(report.id);
-      await _openPdf(bytes, report.title);
+      String pdfPath;
+      if (await LocalFileStorageService.instance.exists(report.localPdfPath)) {
+        pdfPath = report.localPdfPath!;
+      } else {
+        // Not cached on this device yet (e.g. generated elsewhere, or
+        // this is a fresh login) — download once, then cache it locally
+        // so the next open (and the next app restart) doesn't need the
+        // network at all.
+        final bytes = await XrayReportService.instance.downloadPdf(report.id);
+        pdfPath = await LocalFileStorageService.instance
+            .saveBytes(bytes, subfolder: 'xray_reports', filename: '${report.id}.pdf');
+        final updated = report.copyWith(localPdfPath: pdfPath);
+        await DatabaseService.instance.saveXrayReportLocal(updated);
+        _loadPastReports();
+      }
+      await _openPdfFile(pdfPath);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -195,7 +251,7 @@ class _XrayReportScreenState extends State<XrayReportScreen> {
                   child: ElevatedButton.icon(
                     icon: const Icon(Icons.picture_as_pdf_outlined),
                     label: Text(AppText.t('xray_report_download', lang)),
-                    onPressed: () => _openPdf(_result!.pdfBytes, _result!.report.title),
+                    onPressed: () => _openPdfFile(_result!.report.localPdfPath!),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -203,7 +259,8 @@ class _XrayReportScreenState extends State<XrayReportScreen> {
                   child: OutlinedButton.icon(
                     icon: const Icon(Icons.share_outlined),
                     label: Text(AppText.t('xray_report_share', lang)),
-                    onPressed: () => _sharePdf(_result!.pdfBytes, _result!.report.title),
+                    onPressed: () =>
+                        _sharePdfFile(_result!.report.localPdfPath!, _result!.report.title),
                   ),
                 ),
               ],

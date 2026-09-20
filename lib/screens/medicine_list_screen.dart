@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 import '../models/medicine.dart';
 import '../services/database_service.dart';
 import '../services/notification_service.dart';
+import '../services/local_file_storage_service.dart';
 import '../services/settings_service.dart';
 import '../services/app_text.dart';
 
@@ -89,6 +90,9 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
     final Set<int> customDays = {...(existing?.customDays ?? [])};
     DateTime? endDate = existing?.endDate;
     String? photoPath = existing?.photoPath;
+    // Generated up front (not at save time) so the photo, if one is
+    // picked, can be persisted under this medicine's own id right away.
+    final medicineId = existing?.id ?? const Uuid().v4();
 
     await showDialog(
       context: context,
@@ -126,7 +130,15 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
                             final picked = await ImagePicker().pickImage(
                                 source: ImageSource.camera, imageQuality: 85);
                             if (picked != null) {
-                              setStateDialog(() => photoPath = picked.path);
+                              // Persist immediately out of the OS temp
+                              // location — see local_file_storage_service.dart.
+                              final ext = picked.path.contains('.')
+                                  ? picked.path.split('.').last
+                                  : 'jpg';
+                              final persistentPath = await LocalFileStorageService.instance
+                                  .savePickedFile(File(picked.path),
+                                      subfolder: 'medicines', filename: '$medicineId.$ext');
+                              setStateDialog(() => photoPath = persistentPath);
                             }
                           },
                           borderRadius: BorderRadius.circular(16),
@@ -270,7 +282,7 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
                 }
 
                 final medicine = Medicine(
-                  id: existing?.id ?? const Uuid().v4(),
+                  id: medicineId,
                   name: nameCtrl.text.trim(),
                   dosage: dosageCtrl.text.trim(),
                   instructions: instructionsCtrl.text.trim(),
