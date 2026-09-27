@@ -9,6 +9,7 @@ import '../models/health_record.dart';
 import '../models/medical_report.dart';
 import '../models/care_contact.dart';
 import '../models/xray_report.dart';
+import '../models/lab_value.dart';
 import 'cloud_sync_service.dart';
 
 /// Single source of truth for all local persistence.
@@ -33,7 +34,7 @@ class DatabaseService {
 
     return openDatabase(
       path,
-      version: 6,
+      version: 7,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE medicines (
@@ -138,6 +139,18 @@ class DatabaseService {
             localPhotoPath TEXT
           )
         ''');
+        await db.execute('''
+          CREATE TABLE lab_values (
+            id TEXT PRIMARY KEY,
+            reportId TEXT,
+            testName TEXT,
+            value REAL,
+            unit TEXT,
+            refLow REAL,
+            refHigh REAL,
+            date TEXT
+          )
+        ''');
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -236,6 +249,23 @@ class DatabaseService {
               createdAt TEXT,
               localPdfPath TEXT,
               localPhotoPath TEXT
+            )
+          ''');
+        }
+        if (oldVersion < 7) {
+          // Structured numeric test values extracted from lab reports
+          // (Hemoglobin, blood sugar, etc.) — powers the "Lab Trends"
+          // month-over-month charts. See LabTestValue.
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS lab_values (
+              id TEXT PRIMARY KEY,
+              reportId TEXT,
+              testName TEXT,
+              value REAL,
+              unit TEXT,
+              refLow REAL,
+              refHigh REAL,
+              date TEXT
             )
           ''');
         }
@@ -432,7 +462,66 @@ class DatabaseService {
   Future<void> deleteMedicalReport(String id, {bool sync = true}) async {
     final db = await database;
     await db.delete('medical_reports', where: 'id = ?', whereArgs: [id]);
+    // A report's own lab values are meaningless once the report is gone
+    // (they'd otherwise keep showing up in trend charts forever).
+    await deleteLabValuesForReport(id, sync: sync);
     if (sync) unawaited(CloudSyncService.instance.deleteMedicalReport(id));
+  }
+
+  // ---------- Lab test values (extracted for "Lab Trends" charts) ----------
+  Future<void> insertLabValues(List<LabTestValue> values,
+      {bool sync = true}) async {
+    if (values.isEmpty) return;
+    final db = await database;
+    final batch = db.batch();
+    for (final v in values) {
+      batch.insert('lab_values', v.toMap(),
+          conflictAlgorithm: ConflictAlgorithm.replace);
+    }
+    await batch.commit(noResult: true);
+    if (sync) {
+      for (final v in values) {
+        unawaited(CloudSyncService.instance.pushLabValue(v));
+      }
+    }
+  }
+
+  /// All stored test readings, oldest first — the shape a trend chart
+  /// wants to plot directly.
+  Future<List<LabTestValue>> getLabValues() async {
+    final db = await database;
+    final rows = await db.query('lab_values', orderBy: 'date ASC');
+    return rows.map((r) => LabTestValue.fromMap(r)).toList();
+  }
+
+  /// Readings for one specific test (e.g. "Hemoglobin"), oldest first —
+  /// exactly the series a single trend graph needs.
+  Future<List<LabTestValue>> getLabValuesForTest(String testName) async {
+    final db = await database;
+    final rows = await db.query('lab_values',
+        where: 'testName = ?', whereArgs: [testName], orderBy: 'date ASC');
+    return rows.map((r) => LabTestValue.fromMap(r)).toList();
+  }
+
+  /// Distinct test names that have at least 2 dated readings — a single
+  /// reading has nothing to trend against, so those are left out of the
+  /// "Lab Trends" list (they're still visible on the report itself).
+  Future<List<String>> getTrendableTestNames() async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      SELECT testName, COUNT(*) as c FROM lab_values
+      GROUP BY testName HAVING c >= 2 ORDER BY testName ASC
+    ''');
+    return rows.map((r) => r['testName'] as String).toList();
+  }
+
+  Future<void> deleteLabValuesForReport(String reportId,
+      {bool sync = true}) async {
+    final db = await database;
+    await db.delete('lab_values', where: 'reportId = ?', whereArgs: [reportId]);
+    if (sync) {
+      unawaited(CloudSyncService.instance.deleteLabValuesForReport(reportId));
+    }
   }
 
   // ---------- Care contacts (WhatsApp missed-dose / appointment alerts) ----------

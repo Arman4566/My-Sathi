@@ -6,6 +6,7 @@ import 'report_upload_screen.dart';
 import 'scan_analysis_screen.dart';
 import 'xray_report_screen.dart';
 import 'report_detail_screen.dart';
+import 'lab_trends_screen.dart';
 import '../services/settings_service.dart';
 import '../services/app_text.dart';
 
@@ -33,7 +34,19 @@ class _ReportsScreenState extends State<ReportsScreen> {
   Widget build(BuildContext context) {
     final lang = context.watch<SettingsService>().languageCode;
     return Scaffold(
-      appBar: AppBar(title: Text(AppText.t('my_reports', lang))),
+      appBar: AppBar(
+        title: Text(AppText.t('my_reports', lang)),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.show_chart),
+            tooltip: AppText.t('lab_trends_title', lang),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const LabTrendsScreen()),
+            ),
+          ),
+        ],
+      ),
       body: _reports.isEmpty
           ? Center(
               child: Text(

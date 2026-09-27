@@ -41,7 +41,7 @@ class AiBackendService {
   // Replace with your deployed backend URL. Shared by auth_service.dart
   // and cloud_sync_service.dart too, so there's only one place to update
   // after deploying.
-  static const String baseUrl = 'https://my-sathi3.onrender.com';
+  static const String baseUrl = 'https://YOUR-BACKEND-URL.example.com';
   static const String _baseUrl = baseUrl;
 
   /// Backend error responses may include a friendlier `message` (e.g. for
@@ -145,6 +145,35 @@ class AiBackendService {
 
     final data = jsonDecode(res.body) as Map<String, dynamic>;
     return data['summary'] as String;
+  }
+
+  /// Extracts structured numeric test readings (name, value, unit, normal
+  /// range) from a lab report's raw OCR text — e.g. "Hemoglobin 13.2
+  /// g/dL (13.0-17.0)" becomes one machine-readable row. This is what
+  /// powers the "Lab Trends" screen: the same test tracked as numbers
+  /// across multiple months' reports can then be charted and its
+  /// direction (improving/declining/stable) worked out.
+  ///
+  /// Returns an empty list (never throws past this method) if the report
+  /// has no recognizable numeric test values or the backend isn't
+  /// reachable — callers should treat that as "nothing to chart yet",
+  /// not an error, since plenty of reports (a doctor's handwritten note,
+  /// a scan summary) legitimately have none.
+  Future<List<Map<String, dynamic>>> extractLabValues(String rawText) async {
+    if (rawText.trim().isEmpty) return [];
+    try {
+      final res = await http.post(
+        Uri.parse('$_baseUrl/api/extract-lab-values'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'rawText': rawText}),
+      );
+      if (res.statusCode != 200) return [];
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      final list = (data['values'] as List?) ?? [];
+      return list.cast<Map<String, dynamic>>();
+    } catch (_) {
+      return [];
+    }
   }
 
   /// "Sathi AI Scan Insight" — sends a photo of an X-ray/ultrasound/similar

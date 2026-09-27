@@ -56,6 +56,9 @@ dependencies:
   crypto: ^3.0.5
   shared_preferences: ^2.2.3
 
+  # Line charts for the "Lab Trends" screen (blood test values over time)
+  fl_chart: ^0.69.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

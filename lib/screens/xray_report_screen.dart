@@ -180,6 +180,51 @@ class _XrayReportScreenState extends State<XrayReportScreen> {
     }
   }
 
+  Future<void> _confirmDeleteReport(XrayReport report) async {
+    final lang = context.read<SettingsService>().languageCode;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(AppText.t('xray_report_delete_title', lang)),
+        content: Text(AppText.t('xray_report_delete_body', lang)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(AppText.t('cancel', lang)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(AppText.t('delete', lang), style: const TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await _deleteReport(report);
+  }
+
+  Future<void> _deleteReport(XrayReport report) async {
+    // Remove everywhere it lives: the backend copy (so it's gone across
+    // every device), the local DB row, and the cached photo/PDF files on
+    // this device — otherwise a "deleted" report could still show up
+    // again from a local-first load, or leave orphaned files behind.
+    try {
+      await XrayReportService.instance.deleteReport(report.id);
+    } catch (e) {
+      // Still proceed to clear it locally even if the backend call fails
+      // (e.g. offline) — the user asked to delete it, and re-syncing a
+      // report they've deleted locally isn't the right fallback here.
+      debugPrint('Backend delete of X-ray report failed: $e');
+    }
+    await DatabaseService.instance.deleteXrayReportLocal(report.id);
+    await LocalFileStorageService.instance.delete(report.localPdfPath);
+    await LocalFileStorageService.instance.delete(report.localPhotoPath);
+
+    if (mounted) {
+      setState(() => _pastReports.removeWhere((r) => r.id == report.id));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final lang = context.watch<SettingsService>().languageCode;
@@ -282,6 +327,11 @@ class _XrayReportScreenState extends State<XrayReportScreen> {
                     title: Text(r.title, maxLines: 1, overflow: TextOverflow.ellipsis),
                     subtitle: Text('${r.primaryFinding} \u2014 ${(r.confidence * 100).toStringAsFixed(1)}% (${r.confidenceBand})'),
                     onTap: () => _openPastReport(r),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                      tooltip: AppText.t('delete', lang),
+                      onPressed: () => _confirmDeleteReport(r),
+                    ),
                   ),
                 )),
         ],

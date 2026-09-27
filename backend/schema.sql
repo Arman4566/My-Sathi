@@ -196,6 +196,25 @@ ALTER TABLE appointments ADD COLUMN IF NOT EXISTS whatsapp_reminder_sent_at TIME
 -- most hosting platforms (e.g. Render/Railway wipe it on redeploy) and
 -- this keeps the feature working anywhere the rest of the backend runs,
 -- with no separate file storage to set up.
+-- Structured numeric readings extracted from a medical_reports row by
+-- POST /api/extract-lab-values (e.g. "Hemoglobin: 13.2 g/dL"). One report
+-- can produce many rows (a full panel). Powers the app's "Lab Trends"
+-- charts, which need the same test tracked as a number across several
+-- dated reports — plain free-text summaries can't support that.
+CREATE TABLE IF NOT EXISTS lab_values (
+  id UUID PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  report_id UUID,
+  test_name TEXT NOT NULL,
+  value REAL NOT NULL,
+  unit TEXT DEFAULT '',
+  ref_low REAL,
+  ref_high REAL,
+  date TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS lab_values_user_test ON lab_values (user_id, test_name, date);
+
 CREATE TABLE IF NOT EXISTS xray_reports (
   id UUID PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,

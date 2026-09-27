@@ -33,6 +33,11 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
   void initState() {
     super.initState();
     _load();
+    // Cheap self-healing pass so a reminder for a medicine deleted
+    // elsewhere (or in a previous session, before this reconciliation
+    // existed) doesn't keep firing just because this screen wasn't
+    // reopened since app startup — see NotificationService.init().
+    NotificationService.instance.reconcileAllReminders();
   }
 
   Future<void> _load() async {

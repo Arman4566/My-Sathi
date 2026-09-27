@@ -6,6 +6,7 @@ import '../models/prescription.dart';
 import '../models/medical_report.dart';
 import '../models/health_record.dart';
 import '../models/care_contact.dart';
+import '../models/lab_value.dart';
 import 'auth_service.dart';
 import 'ai_backend_service.dart';
 import 'database_service.dart';
@@ -105,6 +106,32 @@ class CloudSyncService {
 
   Future<void> deleteMedicalReport(String id) => _deleteSafely('medical-reports', id);
 
+  Future<void> pushLabValue(LabTestValue v) async {
+    await _pushSafely('lab-values', {
+      'id': v.id,
+      'reportId': v.reportId,
+      'testName': v.testName,
+      'value': v.value,
+      'unit': v.unit,
+      'refLow': v.refLow,
+      'refHigh': v.refHigh,
+      'date': v.date.toIso8601String(),
+    });
+  }
+
+  Future<void> deleteLabValuesForReport(String reportId) async {
+    try {
+      final headers = await _authHeaders();
+      if (headers == null) return;
+      await http
+          .delete(Uri.parse('$_baseUrl/api/lab-values/by-report/$reportId'),
+              headers: headers)
+          .timeout(const Duration(seconds: 15));
+    } catch (_) {
+      // Same reasoning as _pushSafely.
+    }
+  }
+
   Future<void> pushHealthRecord(HealthRecord r) async {
     await _pushSafely('health-records', {
       'id': r.id,
@@ -195,6 +222,7 @@ class CloudSyncService {
       _pullMedicalReports(headers),
       _pullHealthRecords(headers),
       _pullCareContacts(headers),
+      _pullLabValues(headers),
     ]);
   }
 
@@ -291,6 +319,30 @@ class CloudSyncService {
         );
         await DatabaseService.instance.insertMedicalReport(r, sync: false);
       }
+    } catch (_) {}
+  }
+
+  Future<void> _pullLabValues(Map<String, String> headers) async {
+    try {
+      final res = await http
+          .get(Uri.parse('$_baseUrl/api/lab-values'), headers: headers)
+          .timeout(const Duration(seconds: 20));
+      if (res.statusCode != 200) return;
+      final list = (jsonDecode(res.body)['values'] as List);
+      final values = list
+          .map((j) => LabTestValue(
+                id: j['id'],
+                reportId: j['reportId'] ?? '',
+                testName: j['testName'] ?? '',
+                value: (j['value'] as num).toDouble(),
+                unit: j['unit'] ?? '',
+                refLow: j['refLow'] == null ? null : (j['refLow'] as num).toDouble(),
+                refHigh:
+                    j['refHigh'] == null ? null : (j['refHigh'] as num).toDouble(),
+                date: DateTime.tryParse(j['date'] ?? '') ?? DateTime.now(),
+              ))
+          .toList();
+      await DatabaseService.instance.insertLabValues(values, sync: false);
     } catch (_) {}
   }
 

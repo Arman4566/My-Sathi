@@ -8,6 +8,7 @@ const medicinesRouter = require('./medicines');
 const appointmentsRouter = require('./appointments');
 const prescriptionsRouter = require('./prescriptions');
 const medicalReportsRouter = require('./medical_reports');
+const labValuesRouter = require('./lab_values');
 const healthRecordsRouter = require('./health_records');
 const careContactsRouter = require('./care_contacts');
 const medicineDosesRouter = require('./medicine_doses');
@@ -48,6 +49,7 @@ app.use('/api/medicines', medicinesRouter);
 app.use('/api/appointments', appointmentsRouter);
 app.use('/api/prescriptions', prescriptionsRouter);
 app.use('/api/medical-reports', medicalReportsRouter);
+app.use('/api/lab-values', labValuesRouter);
 app.use('/api/health-records', healthRecordsRouter);
 // Caregiver/family contacts for WhatsApp missed-dose + appointment
 // alerts, and the endpoint the app hits to confirm a dose was taken.
@@ -97,6 +99,60 @@ referenced in the text. Here is the raw text to parse: \n\n${rawText}`,
       });
     }
     res.status(500).json({ error: 'parse_failed' });
+  }
+});
+
+// ---------------------------------------------------------------------
+// 1b) Lab report text -> structured numeric test values (Hemoglobin,
+//     Blood Sugar, Cholesterol, etc.), one row per test found. This is
+//     what powers the app's "Lab Trends" charts: the same test tracked
+//     as a number across several months' reports can be plotted and its
+//     direction (improving/declining/stable) worked out, which plain
+//     free-text summaries can't support.
+// ---------------------------------------------------------------------
+app.post('/api/extract-lab-values', async (req, res) => {
+  try {
+    const { rawText } = req.body;
+    if (!rawText || !rawText.trim()) {
+      return res.status(400).json({ error: 'no_text' });
+    }
+
+    const response = await generateWithRetry({
+      model: PRIMARY_MODEL,
+      contents: `You extract numeric lab/blood test results from the raw
+OCR text of a medical report. The text may be messy or have OCR errors.
+Return ONLY valid JSON, no prose, no markdown fences, in this exact shape:
+{"values":[{"test":"","value":0,"unit":"","low":null,"high":null}]}
+Rules:
+- "test" is the standardized test name (e.g. "Hemoglobin", "Fasting Blood
+  Sugar", "Total Cholesterol", "Creatinine") — use a short, consistent
+  name so the same test can be matched across different reports.
+- "value" must be a plain number (the patient's result), not a string,
+  not a range.
+- "low"/"high" are the stated normal reference range for that test, as
+  plain numbers, or null if no range is given in the text.
+- Only include rows where you can confidently read a specific numeric
+  result for a named test. Skip anything ambiguous, non-numeric (e.g.
+  "Negative"/"Normal" results), or that looks like a header/footer.
+- If the text has no recognizable numeric test results at all (e.g. it's
+  a doctor's note or a scan description), return {"values":[]}.
+Here is the raw text: \n\n${rawText}`,
+      config: {
+        responseMimeType: 'application/json',
+      }
+    });
+
+    const parsed = JSON.parse(response.text);
+    res.json(parsed);
+  } catch (err) {
+    console.error(err);
+    if (isOverloadedError(err)) {
+      return res.status(503).json({
+        error: 'ai_overloaded',
+        message: 'The AI service is busy right now. Please try again in a moment.',
+      });
+    }
+    res.status(500).json({ error: 'extract_failed' });
   }
 });
 
@@ -364,8 +420,8 @@ app.post('/api/summarize-report', async (req, res) => {
 // pushes the patient toward an actual radiologist/doctor.
 // ---------------------------------------------------------------------
 const SCAN_ANALYSIS_PROMPT = `You are assisting a patient by describing what
-is visible in an uploaded medical scan image (X-ray, ultrasound, or
-similar). You are NOT a radiologist and this is NOT a diagnosis. Follow
+is visible in an uploaded medical scan image (X-ray, ultrasound, CT, MRI,
+or similar). You are NOT a radiologist and this is NOT a diagnosis. Follow
 these rules strictly:
 - Describe only general visual observations, in plain everyday language a
   non-medical person can understand.

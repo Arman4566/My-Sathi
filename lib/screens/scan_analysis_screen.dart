@@ -34,11 +34,19 @@ class _ScanAnalysisScreenState extends State<ScanAnalysisScreen> {
   final _titleCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
 
-  // X-ray now has its own dedicated real-model flow (see
-  // XrayReportScreen / xray_ai_service) reachable from the Reports
-  // screen's "+" menu — this screen covers everything that doesn't have
-  // a real pretrained model available (ultrasound, and anything else).
-  static const _scanTypes = ['Ultrasound', 'Other scan'];
+  // X-ray has its own dedicated real-model flow (see XrayReportScreen /
+  // xray_ai_service) reachable from the Reports screen's "+" menu —
+  // this screen covers everything without a broadly-available real
+  // pretrained classifier: ultrasound, CT, MRI, and anything else.
+  //
+  // CT/MRI specifically: unlike chest X-ray, there's no free,
+  // well-validated pretrained model that takes a single 2D photo and
+  // returns real per-condition confidence scores — genuine CT/MRI
+  // models need full 3D volumes (NIfTI/DICOM series) and mostly do
+  // organ/tumor segmentation, not diagnosis from one image. So these
+  // get the same honest plain-language description as ultrasound
+  // rather than a fabricated "real model" treatment.
+  static const _scanTypes = ['Ultrasound', 'CT Scan', 'MRI', 'Other scan'];
   String _scanType = _scanTypes.first;
 
   File? _image;

@@ -101,6 +101,56 @@ class NotificationService {
     }
 
     await Alarm.init();
+
+    // Self-healing pass: cancels any reminder still scheduled for a
+    // medicine or appointment that's since been deleted or deactivated.
+    // This is the fix for "I deleted a reminder but it still rings, and
+    // I had to clear all app data to stop it" — rather than relying on
+    // every single delete flow perfectly cancelling its own alarm every
+    // time (most do, but this is a cheap, robust backstop that doesn't
+    // depend on tracking down exactly which path missed it), this
+    // reconciles everything currently scheduled against what should
+    // actually still exist, on every app startup.
+    unawaited(reconcileAllReminders());
+  }
+
+  /// Compares every reminder currently scheduled (per our own tracked
+  /// metadata) against current database truth, and cancels anything left
+  /// over from a medicine or appointment that no longer exists or is no
+  /// longer active. Safe to call as often as you like — it's cheap, and
+  /// idempotent. Called on app startup (see init() above); also worth
+  /// calling from the medicines/appointments list screens whenever they
+  /// load, so a stale reminder gets cleaned up the moment its screen is
+  /// opened, not just on the next app restart.
+  Future<void> reconcileAllReminders() async {
+    // Medicines: a full rebuild from current DB truth is already
+    // self-healing on its own — it cancels every alarm currently tracked
+    // under kind 'medicine' and reschedules fresh only for what's
+    // actually active right now, so anything for a deleted/deactivated
+    // medicine simply doesn't get recreated.
+    await _recomputeMedicineAlarms();
+
+    // Appointments: each gets its own independent alarm (not merged the
+    // way medicine slots are), so prune any whose appointment record no
+    // longer exists.
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final store = _decodeStore(prefs.getString(_metaPrefsKey));
+      final validAppointmentIds =
+          (await DatabaseService.instance.getUpcomingAppointments()).map((a) => a.id).toSet();
+
+      for (final entry in store.entries) {
+        final meta = entry.value as Map?;
+        if (meta == null || meta['kind'] != 'appointment') continue;
+        final apptId = meta['appointmentId'] as String?;
+        if (apptId == null || !validAppointmentIds.contains(apptId)) {
+          final id = int.tryParse(entry.key);
+          if (id != null) await _cancelAny(id);
+        }
+      }
+    } catch (e) {
+      debugPrint('Reminder reconciliation (appointments) failed: $e');
+    }
   }
 
   // ---------- Alarm metadata store ----------

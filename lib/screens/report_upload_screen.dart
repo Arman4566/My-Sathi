@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import '../models/medical_report.dart';
+import '../models/lab_value.dart';
 import '../services/database_service.dart';
 import '../services/ocr_service.dart';
 import '../services/ai_backend_service.dart';
@@ -21,10 +22,15 @@ class _ReportUploadScreenState extends State<ReportUploadScreen> {
   final _ocr = OcrService();
   final _picker = ImagePicker();
   final _titleCtrl = TextEditingController();
+  // Generated once up front (rather than at save time) so any lab values
+  // extracted from this report can be tagged with the same reportId as
+  // the MedicalReport row they'll be saved alongside.
+  final String _reportId = const Uuid().v4();
 
   File? _image;
   String _rawText = '';
   String? _summary;
+  List<LabTestValue> _labValues = [];
   bool _loading = false;
   String? _error;
 
@@ -38,6 +44,7 @@ class _ReportUploadScreenState extends State<ReportUploadScreen> {
       _loading = true;
       _error = null;
       _summary = null;
+      _labValues = [];
     });
 
     try {
@@ -48,9 +55,28 @@ class _ReportUploadScreenState extends State<ReportUploadScreen> {
       } catch (_) {
         summary = null; // backend not reachable — still let them save the raw text
       }
+      // Best-effort: also try to pull out any numeric test results (e.g.
+      // "Hemoglobin 13.2 g/dL") so they can be charted later in Lab
+      // Trends. Yields nothing for reports that aren't lab panels
+      // (doctor's notes, scan summaries) — that's expected, not an
+      // error, so it never sets _error.
+      List<LabTestValue> labValues = [];
+      try {
+        final rows = await AiBackendService.instance.extractLabValues(raw);
+        final now = DateTime.now();
+        labValues = rows
+            .where((j) => j['test'] != null && j['value'] != null)
+            .map((j) => LabTestValue.fromAiJson(j,
+                id: const Uuid().v4(), reportId: _reportId, date: now))
+            .where((v) => v.testName.isNotEmpty)
+            .toList();
+      } catch (_) {
+        labValues = [];
+      }
       setState(() {
         _rawText = raw;
         _summary = summary;
+        _labValues = labValues;
         if (summary == null) {
           _error = AppText.t('summary_unavailable', lang);
         }
@@ -65,7 +91,7 @@ class _ReportUploadScreenState extends State<ReportUploadScreen> {
   Future<void> _save() async {
     if (_image == null) return;
     final lang = context.read<SettingsService>().languageCode;
-    final id = const Uuid().v4();
+    final id = _reportId;
 
     // Copy the picked photo out of the OS temp/cache location (which can
     // be cleared at any time) into the app's persistent documents
@@ -87,6 +113,9 @@ class _ReportUploadScreenState extends State<ReportUploadScreen> {
       uploadedDate: DateTime.now(),
     );
     await DatabaseService.instance.insertMedicalReport(report);
+    if (_labValues.isNotEmpty) {
+      await DatabaseService.instance.insertLabValues(_labValues);
+    }
     if (mounted) Navigator.pop(context);
   }
 
@@ -159,6 +188,43 @@ class _ReportUploadScreenState extends State<ReportUploadScreen> {
               const SizedBox(height: 8),
               Text(
                 AppText.t('summary_disclaimer', lang),
+                style: TextStyle(color: Theme.of(context).hintColor, fontSize: 12),
+              ),
+            ],
+            if (_labValues.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Text(AppText.t('lab_values_detected', lang)
+                  .replaceFirst('{count}', '${_labValues.length}'),
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 6),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).cardColor,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Theme.of(context).dividerColor),
+                ),
+                child: Column(
+                  children: _labValues
+                      .map((v) => ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(v.testName),
+                            trailing: Text(
+                              '${v.value}${v.unit.isNotEmpty ? ' ${v.unit}' : ''}',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: v.isAbnormal ? Colors.orange : null,
+                              ),
+                            ),
+                          ))
+                      .toList(),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                AppText.t('lab_values_trend_hint', lang),
                 style: TextStyle(color: Theme.of(context).hintColor, fontSize: 12),
               ),
             ],
