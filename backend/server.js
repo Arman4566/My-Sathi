@@ -26,7 +26,7 @@ const { startWhatsAppReminderPoller } = require('./whatsapp_reminders');
 // successfully save a medicine or appointment through chat.
 // The client + retry/fallback logic now lives in ai.js so the
 // appointment-call feature (appointment_calls.js) can reuse it too.
-const { generateWithRetry, isOverloadedError, PRIMARY_MODEL } = require('./ai');
+const { generateWithRetry, isOverloadedError, isQuotaExceededError, PRIMARY_MODEL } = require('./ai');
 
 const app = express();
 app.use(cors());
@@ -98,61 +98,13 @@ referenced in the text. Here is the raw text to parse: \n\n${rawText}`,
         message: 'The AI service is busy right now. Please try again in a moment.',
       });
     }
-    res.status(500).json({ error: 'parse_failed' });
-  }
-});
-
-// ---------------------------------------------------------------------
-// 1b) Lab report text -> structured numeric test values (Hemoglobin,
-//     Blood Sugar, Cholesterol, etc.), one row per test found. This is
-//     what powers the app's "Lab Trends" charts: the same test tracked
-//     as a number across several months' reports can be plotted and its
-//     direction (improving/declining/stable) worked out, which plain
-//     free-text summaries can't support.
-// ---------------------------------------------------------------------
-app.post('/api/extract-lab-values', async (req, res) => {
-  try {
-    const { rawText } = req.body;
-    if (!rawText || !rawText.trim()) {
-      return res.status(400).json({ error: 'no_text' });
-    }
-
-    const response = await generateWithRetry({
-      model: PRIMARY_MODEL,
-      contents: `You extract numeric lab/blood test results from the raw
-OCR text of a medical report. The text may be messy or have OCR errors.
-Return ONLY valid JSON, no prose, no markdown fences, in this exact shape:
-{"values":[{"test":"","value":0,"unit":"","low":null,"high":null}]}
-Rules:
-- "test" is the standardized test name (e.g. "Hemoglobin", "Fasting Blood
-  Sugar", "Total Cholesterol", "Creatinine") — use a short, consistent
-  name so the same test can be matched across different reports.
-- "value" must be a plain number (the patient's result), not a string,
-  not a range.
-- "low"/"high" are the stated normal reference range for that test, as
-  plain numbers, or null if no range is given in the text.
-- Only include rows where you can confidently read a specific numeric
-  result for a named test. Skip anything ambiguous, non-numeric (e.g.
-  "Negative"/"Normal" results), or that looks like a header/footer.
-- If the text has no recognizable numeric test results at all (e.g. it's
-  a doctor's note or a scan description), return {"values":[]}.
-Here is the raw text: \n\n${rawText}`,
-      config: {
-        responseMimeType: 'application/json',
-      }
-    });
-
-    const parsed = JSON.parse(response.text);
-    res.json(parsed);
-  } catch (err) {
-    console.error(err);
-    if (isOverloadedError(err)) {
-      return res.status(503).json({
-        error: 'ai_overloaded',
-        message: 'The AI service is busy right now. Please try again in a moment.',
+    if (isQuotaExceededError(err)) {
+      return res.status(429).json({
+        error: 'ai_quota_exceeded',
+        message: 'The AI service has hit its usage limit for now. Please try again later.',
       });
     }
-    res.status(500).json({ error: 'extract_failed' });
+    res.status(500).json({ error: 'parse_failed' });
   }
 });
 
@@ -349,6 +301,12 @@ app.post('/api/chat', async (req, res) => {
         message: 'The AI service is busy right now. Please try again in a moment.',
       });
     }
+    if (isQuotaExceededError(err)) {
+      return res.status(429).json({
+        error: 'ai_quota_exceeded',
+        message: 'The AI service has hit its usage limit for now. Please try again later.',
+      });
+    }
     res.status(500).json({ error: 'chat_failed', message: err.message });
   }
 });
@@ -357,19 +315,47 @@ app.post('/api/chat', async (req, res) => {
 // 3) Medical report summary — patient uploads a lab report / doctor's
 //    note, we OCR it on-device (Flutter side) and send the raw text here
 //    for a plain-language summary they can read anytime.
+//
+//    This also pulls out any structured numeric test values (Hemoglobin,
+//    Blood Sugar, etc.) in the SAME call — one Gemini request instead of
+//    two — since that's what powers the "Lab Trends" month-over-month
+//    charts. Keeping it to one call matters on the free tier's 20
+//    requests/day cap; a separate extraction call would burn through it
+//    twice as fast for no benefit (the model reads the report text once
+//    either way).
 // ---------------------------------------------------------------------
-const REPORT_SUMMARY_PROMPT = `You summarize a medical report or lab result
-for a patient (not a doctor) to read. Rules:
+const REPORT_SUMMARY_PROMPT = `You read a medical report or lab result for
+a patient (not a doctor) and return ONLY valid JSON, no prose, no markdown
+fences, in this exact shape:
+{"summary":"","values":[{"test":"","value":0,"unit":"","low":null,"high":null}]}
+
+For "summary" (a single string):
 - Use plain, everyday language, no unexplained jargon.
-- Structure your reply as: a 2-3 sentence overview, then a short bullet
-  list of the key values/findings and whether each is in the normal range
-  if that's stated or clearly inferable from the text.
+- Structure it as: a 2-3 sentence overview, then a short bullet list (as
+  plain text lines, not JSON) of the key values/findings and whether each
+  is in the normal range if that's stated or clearly inferable.
 - If a value looks abnormal, say so plainly but do NOT diagnose a
   condition or tell them what to do about it — just note it and suggest
   they discuss it with their doctor.
 - If the text is too garbled/incomplete to summarize confidently, say so
   honestly rather than guessing.
-- Keep the whole summary under 200 words.`;
+- Keep it under 200 words.
+
+For "values" (an array, possibly empty):
+- One entry per numeric lab/blood test result found in the text.
+- "test" is the standardized test name (e.g. "Hemoglobin", "Fasting Blood
+  Sugar", "Total Cholesterol", "Creatinine") — use a short, consistent
+  name so the same test can be matched across different reports.
+- "value" must be a plain number (the patient's result), not a string,
+  not a range.
+- "low"/"high" are the stated normal reference range for that test, as
+  plain numbers, or null if no range is given in the text.
+- Only include rows where you can confidently read a specific numeric
+  result for a named test. Skip anything ambiguous, non-numeric (e.g.
+  "Negative"/"Normal" results), or that looks like a header/footer.
+- If the text has no recognizable numeric test results at all (e.g. it's
+  a doctor's note or a scan description), use an empty array — that's
+  expected and fine, not an error.`;
 
 app.post('/api/summarize-report', async (req, res) => {
   try {
@@ -383,16 +369,27 @@ app.post('/api/summarize-report', async (req, res) => {
       contents: rawText,
       config: {
         systemInstruction: REPORT_SUMMARY_PROMPT,
+        responseMimeType: 'application/json',
       }
     });
 
-    res.json({ summary: response.text });
+    const parsed = JSON.parse(response.text);
+    res.json({
+      summary: parsed.summary || '',
+      values: Array.isArray(parsed.values) ? parsed.values : [],
+    });
   } catch (err) {
     console.error(err);
     if (isOverloadedError(err)) {
       return res.status(503).json({
         error: 'ai_overloaded',
         message: 'The AI service is busy right now. Please try again in a moment.',
+      });
+    }
+    if (isQuotaExceededError(err)) {
+      return res.status(429).json({
+        error: 'ai_quota_exceeded',
+        message: 'The AI service has hit its usage limit for now. Please try again later.',
       });
     }
     res.status(500).json({ error: 'summarize_failed' });
@@ -485,6 +482,12 @@ app.post('/api/analyze-scan', async (req, res) => {
       return res.status(503).json({
         error: 'ai_overloaded',
         message: 'The AI service is busy right now. Please try again in a moment.',
+      });
+    }
+    if (isQuotaExceededError(err)) {
+      return res.status(429).json({
+        error: 'ai_quota_exceeded',
+        message: 'The AI service has hit its usage limit for now. Please try again later.',
       });
     }
     res.status(500).json({ error: 'analyze_failed', message: err.message });

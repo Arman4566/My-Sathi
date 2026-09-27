@@ -128,10 +128,18 @@ class AiBackendService {
   }
 
   /// Sends the raw OCR text of an uploaded report to the backend for a
-  /// plain-language AI summary. See REPORT_SUMMARY_PROMPT in server.js
-  /// for the exact rules the summary follows (no diagnosing, flags
-  /// abnormal values without interpreting them).
-  Future<String> summarizeReport(String rawText) async {
+  /// plain-language AI summary AND structured numeric test values in a
+  /// SINGLE call (one Gemini request, not two) — see the comment on
+  /// REPORT_SUMMARY_PROMPT in server.js. The values are what power the
+  /// "Lab Trends" screen: the same test tracked as a number across
+  /// several dated reports can then be charted and its direction
+  /// (improving/declining/stable) worked out.
+  ///
+  /// Throws if the summary itself can't be produced (the caller can't
+  /// usefully save a report with no summary). [ReportAnalysis.values] is
+  /// simply empty — never an error — for reports with no recognizable
+  /// numeric results (a doctor's note, a scan description).
+  Future<ReportAnalysis> analyzeReport(String rawText) async {
     final res = await http.post(
       Uri.parse('$_baseUrl/api/summarize-report'),
       headers: {'Content-Type': 'application/json'},
@@ -144,36 +152,11 @@ class AiBackendService {
     }
 
     final data = jsonDecode(res.body) as Map<String, dynamic>;
-    return data['summary'] as String;
-  }
-
-  /// Extracts structured numeric test readings (name, value, unit, normal
-  /// range) from a lab report's raw OCR text — e.g. "Hemoglobin 13.2
-  /// g/dL (13.0-17.0)" becomes one machine-readable row. This is what
-  /// powers the "Lab Trends" screen: the same test tracked as numbers
-  /// across multiple months' reports can then be charted and its
-  /// direction (improving/declining/stable) worked out.
-  ///
-  /// Returns an empty list (never throws past this method) if the report
-  /// has no recognizable numeric test values or the backend isn't
-  /// reachable — callers should treat that as "nothing to chart yet",
-  /// not an error, since plenty of reports (a doctor's handwritten note,
-  /// a scan summary) legitimately have none.
-  Future<List<Map<String, dynamic>>> extractLabValues(String rawText) async {
-    if (rawText.trim().isEmpty) return [];
-    try {
-      final res = await http.post(
-        Uri.parse('$_baseUrl/api/extract-lab-values'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'rawText': rawText}),
-      );
-      if (res.statusCode != 200) return [];
-      final data = jsonDecode(res.body) as Map<String, dynamic>;
-      final list = (data['values'] as List?) ?? [];
-      return list.cast<Map<String, dynamic>>();
-    } catch (_) {
-      return [];
-    }
+    final valuesList = (data['values'] as List?) ?? [];
+    return ReportAnalysis(
+      summary: data['summary'] as String? ?? '',
+      values: valuesList.cast<Map<String, dynamic>>(),
+    );
   }
 
   /// "Sathi AI Scan Insight" — sends a photo of an X-ray/ultrasound/similar
@@ -207,6 +190,15 @@ class AiBackendService {
     final data = jsonDecode(res.body) as Map<String, dynamic>;
     return ScanAnalysis.fromJson(data['analysis'] as Map<String, dynamic>);
   }
+}
+
+/// Result of the combined /api/summarize-report call: a plain-language
+/// summary plus any structured numeric test values found in the same
+/// pass — see AiBackendService.analyzeReport.
+class ReportAnalysis {
+  final String summary;
+  final List<Map<String, dynamic>> values;
+  ReportAnalysis({required this.summary, required this.values});
 }
 
 /// Result of "Sathi AI Scan Insight" (see analyzeScan above). Intentionally

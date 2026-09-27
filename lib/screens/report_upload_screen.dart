@@ -50,28 +50,24 @@ class _ReportUploadScreenState extends State<ReportUploadScreen> {
     try {
       final raw = await _ocr.extractRawText(picked.path);
       String? summary;
-      try {
-        summary = await AiBackendService.instance.summarizeReport(raw);
-      } catch (_) {
-        summary = null; // backend not reachable — still let them save the raw text
-      }
-      // Best-effort: also try to pull out any numeric test results (e.g.
-      // "Hemoglobin 13.2 g/dL") so they can be charted later in Lab
-      // Trends. Yields nothing for reports that aren't lab panels
-      // (doctor's notes, scan summaries) — that's expected, not an
-      // error, so it never sets _error.
       List<LabTestValue> labValues = [];
       try {
-        final rows = await AiBackendService.instance.extractLabValues(raw);
+        // One backend call returns both the summary and any structured
+        // lab values — see AiBackendService.analyzeReport. Previously
+        // this was two separate Gemini requests (summarize + extract),
+        // which burned through the free-tier daily quota twice as fast
+        // for no real benefit.
+        final analysis = await AiBackendService.instance.analyzeReport(raw);
+        summary = analysis.summary;
         final now = DateTime.now();
-        labValues = rows
+        labValues = analysis.values
             .where((j) => j['test'] != null && j['value'] != null)
             .map((j) => LabTestValue.fromAiJson(j,
                 id: const Uuid().v4(), reportId: _reportId, date: now))
             .where((v) => v.testName.isNotEmpty)
             .toList();
       } catch (_) {
-        labValues = [];
+        summary = null; // backend not reachable — still let them save the raw text
       }
       setState(() {
         _rawText = raw;

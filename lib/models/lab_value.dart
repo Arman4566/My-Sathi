@@ -57,9 +57,10 @@ class LabTestValue {
     );
   }
 
-  /// Parses one entry of the AI backend's `/api/extract-lab-values`
-  /// response. [reportId]/[date]/[id] are filled in by the caller since
-  /// the backend only returns the test itself, not report metadata.
+  /// Parses one entry of the AI backend's `/api/summarize-report` response
+  /// `values` array (returned alongside the summary in a single call).
+  /// [reportId]/[date]/[id] are filled in by the caller since the backend
+  /// only returns the test itself, not report metadata.
   factory LabTestValue.fromAiJson(
     Map<String, dynamic> j, {
     required String id,

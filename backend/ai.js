@@ -9,8 +9,16 @@ require('dotenv').config();
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-const PRIMARY_MODEL = 'gemini-3.6-flash';
-const FALLBACK_MODEL = 'gemini-3.1-flash-lite';
+// Switched off the gemini-3.6-flash / gemini-3.1-flash-lite pair on
+// 2026-09-27 after burning through gemini-3.6-flash's free-tier daily quota
+// (20 req/day) mid-hackathon. Free-tier quota is tracked separately PER
+// MODEL, so gemini-2.5-flash / gemini-2.5-flash-lite have their own
+// untouched daily bucket even though the 3.6 one is empty for today — no
+// billing needed, just a different model name. Both are still free-tier
+// eligible and GA-stable (scheduled for shutdown 16 Oct 2026, so fine for
+// now — revisit before then).
+const PRIMARY_MODEL = 'gemini-2.5-flash';
+const FALLBACK_MODEL = 'gemini-2.5-flash-lite';
 // NOTE: Google periodically retires older Gemini model IDs (this app has
 // already hit that once — see server.js's history). If either of these
 // starts 404ing with "no longer available", check
@@ -24,6 +32,25 @@ function isOverloadedError(err) {
     err?.status === 503 ||
     err?.error?.code === 503 ||
     /UNAVAILABLE|high demand|overloaded/i.test(err?.message || '')
+  );
+}
+
+// Quota/rate-limit errors (429 RESOURCE_EXHAUSTED) are a DIFFERENT failure
+// mode from a 503 overload and were previously not detected at all — they
+// fell through to the generic 500 handler in every route below, so every
+// AI feature just looked "broken" with no clue why.
+// UPDATE 2026-09-27: the error body confirms quota is tracked per
+// PROJECT+MODEL ("GenerateRequestsPerDayPerProjectPerModel-FreeTier"), not
+// shared across models — so unlike an overload, falling back to a
+// DIFFERENT model on quota-exceeded is actually useful (it has its own
+// untouched daily bucket) and generateWithRetry does that below. Instant
+// per-request retrying still doesn't help (it's a daily cap, not a
+// per-minute one), so this stays out of the retry loop itself.
+function isQuotaExceededError(err) {
+  return (
+    err?.status === 429 ||
+    err?.error?.code === 429 ||
+    /RESOURCE_EXHAUSTED|quota|rate limit/i.test(err?.message || '')
   );
 }
 
@@ -43,6 +70,15 @@ async function generateWithRetry(config, { retries = 2 } = {}) {
     }
   }
 
+  if (isQuotaExceededError(lastErr) && config.model !== FALLBACK_MODEL) {
+    console.warn(`Quota exceeded on ${config.model} — falling back to ${FALLBACK_MODEL} (separate quota bucket)`);
+    try {
+      return await ai.models.generateContent({ ...config, model: FALLBACK_MODEL });
+    } catch (fallbackErr) {
+      lastErr = fallbackErr;
+    }
+  }
+
   if (isOverloadedError(lastErr) && config.model !== FALLBACK_MODEL) {
     console.warn(`Still overloaded after retries — falling back to ${FALLBACK_MODEL}`);
     try {
@@ -55,4 +91,11 @@ async function generateWithRetry(config, { retries = 2 } = {}) {
   throw lastErr;
 }
 
-module.exports = { ai, generateWithRetry, isOverloadedError, PRIMARY_MODEL, FALLBACK_MODEL };
+module.exports = {
+  ai,
+  generateWithRetry,
+  isOverloadedError,
+  isQuotaExceededError,
+  PRIMARY_MODEL,
+  FALLBACK_MODEL,
+};

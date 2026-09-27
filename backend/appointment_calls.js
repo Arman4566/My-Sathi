@@ -48,7 +48,7 @@ const express = require('express');
 const twilio = require('twilio');
 const { requireAuth } = require('./auth');
 const pool = require('./db');
-const { generateWithRetry, isOverloadedError, PRIMARY_MODEL } = require('./ai');
+const { generateWithRetry, isOverloadedError, isQuotaExceededError, PRIMARY_MODEL } = require('./ai');
 
 const MAX_TURNS = 14; // hard cap so a stuck call can't loop forever / run up cost
 
@@ -163,7 +163,15 @@ async function nextTurn(call, transcript) {
     const text = response.text ?? response.candidates?.[0]?.content?.parts?.[0]?.text ?? '{}';
     return JSON.parse(text);
   } catch (err) {
-    console.error('Gemini call-turn generation failed:', err);
+    // Logged distinctly so a burst of dropped calls is easy to tell apart
+    // from a real outage in the logs: quota errors mean "stop making
+    // calls until the quota resets / billing is raised", not "retry".
+    console.error(
+      isQuotaExceededError(err)
+        ? 'Gemini call-turn generation failed: AI quota exceeded'
+        : 'Gemini call-turn generation failed:',
+      err
+    );
     return {
       say: "I'm sorry, I'm having trouble right now. I'll have the patient call you back directly. Thank you, goodbye.",
       done: true,
