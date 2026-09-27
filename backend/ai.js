@@ -9,16 +9,17 @@ require('dotenv').config();
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-// Switched off the gemini-3.6-flash / gemini-3.1-flash-lite pair on
-// 2026-09-27 after burning through gemini-3.6-flash's free-tier daily quota
-// (20 req/day) mid-hackathon. Free-tier quota is tracked separately PER
-// MODEL, so gemini-2.5-flash / gemini-2.5-flash-lite have their own
-// untouched daily bucket even though the 3.6 one is empty for today — no
-// billing needed, just a different model name. Both are still free-tier
-// eligible and GA-stable (scheduled for shutdown 16 Oct 2026, so fine for
-// now — revisit before then).
-const PRIMARY_MODEL = 'gemini-2.5-flash';
-const FALLBACK_MODEL = 'gemini-2.5-flash-lite';
+// UPDATE 2026-09-27 (again, mid-hackathon): gemini-2.5-flash just came back
+// 404 "no longer available to new users" — Google has fully retired the
+// whole 2.5 generation ahead of schedule, not just the quota-limited 3.6
+// pair from earlier today. Google's own error message points at
+// gemini-3.8-flash, but that model's free tier is ALSO capped at a tiny
+// 20 requests/day — the exact same problem we just had. gemini-3.5-flash-lite
+// has a 500 requests/day free tier (25x more headroom), so it's PRIMARY for
+// the demo; gemini-3.8-flash is FALLBACK for quality/overload cases where
+// Flash-Lite alone isn't enough — its quota is separate and untouched.
+const PRIMARY_MODEL = 'gemini-3.5-flash-lite';
+const FALLBACK_MODEL = 'gemini-3.8-flash';
 // NOTE: Google periodically retires older Gemini model IDs (this app has
 // already hit that once — see server.js's history). If either of these
 // starts 404ing with "no longer available", check
@@ -54,6 +55,18 @@ function isQuotaExceededError(err) {
   );
 }
 
+// Added after gemini-2.5-flash got retired mid-hackathon with zero warning
+// (404 "no longer available to new users"). If PRIMARY_MODEL itself gets
+// retired again the same way, fail over to FALLBACK_MODEL instead of every
+// AI feature going dark — cheap insurance on a day models keep moving.
+function isModelUnavailableError(err) {
+  return (
+    err?.status === 404 ||
+    err?.error?.code === 404 ||
+    /NOT_FOUND|no longer available/i.test(err?.message || '')
+  );
+}
+
 async function generateWithRetry(config, { retries = 2 } = {}) {
   let lastErr;
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -67,6 +80,15 @@ async function generateWithRetry(config, { retries = 2 } = {}) {
         `Gemini overloaded (attempt ${attempt + 1}/${retries + 1}), retrying in ${delayMs}ms...`
       );
       await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+
+  if (isModelUnavailableError(lastErr) && config.model !== FALLBACK_MODEL) {
+    console.warn(`${config.model} unavailable/retired — falling back to ${FALLBACK_MODEL}`);
+    try {
+      return await ai.models.generateContent({ ...config, model: FALLBACK_MODEL });
+    } catch (fallbackErr) {
+      lastErr = fallbackErr;
     }
   }
 
@@ -96,6 +118,7 @@ module.exports = {
   generateWithRetry,
   isOverloadedError,
   isQuotaExceededError,
+  isModelUnavailableError,
   PRIMARY_MODEL,
   FALLBACK_MODEL,
 };
