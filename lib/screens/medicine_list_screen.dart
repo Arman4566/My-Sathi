@@ -4,11 +4,14 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import '../models/medicine.dart';
+import '../models/interaction_check.dart';
 import '../services/database_service.dart';
 import '../services/notification_service.dart';
 import '../services/local_file_storage_service.dart';
 import '../services/settings_service.dart';
 import '../services/app_text.dart';
+import '../services/ai_backend_service.dart';
+import '../widgets/interaction_warning_dialog.dart';
 
 const _weekdayLabels = {
   1: 'Mon',
@@ -76,6 +79,46 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
     await NotificationService.instance.cancelMedicineReminders(m);
     await DatabaseService.instance.deleteMedicine(m.id);
     _load();
+  }
+
+  /// Runs the "AI Safety & Interaction Guard" check for [newMedicine]
+  /// against the patient's current active medicines and shows the
+  /// result as a dialog. Returns true if the caller should proceed with
+  /// saving (either no warnings, or the user chose to continue anyway),
+  /// false if they want to go back and review the medicine first.
+  ///
+  /// A failed check (AI overloaded/offline/etc.) never blocks saving —
+  /// it's shown as a neutral "couldn't check" notice instead, matching
+  /// how the rest of the app treats optional AI features as
+  /// best-effort. See AiBackendService.checkInteractions.
+  Future<bool> _runInteractionCheck(
+    BuildContext dialogCtx, {
+    required String lang,
+    required Medicine newMedicine,
+  }) async {
+    InteractionCheckResult? result;
+    var unavailable = false;
+    try {
+      result = await AiBackendService.instance.checkInteractions(
+        newMedicines: [
+          {'name': newMedicine.name, 'dosage': newMedicine.dosage}
+        ],
+        currentMedicines: _medicines
+            .where((m) => m.id != newMedicine.id)
+            .map((m) => {'name': m.name, 'dosage': m.dosage})
+            .toList(),
+      );
+    } catch (_) {
+      unavailable = true;
+    }
+
+    if (!dialogCtx.mounted) return true;
+    return showInteractionWarningDialog(
+      dialogCtx,
+      lang: lang,
+      result: result,
+      unavailable: unavailable,
+    );
   }
 
   /// Shared dialog for adding a new medicine and editing an existing one.
@@ -301,6 +344,20 @@ class _MedicineListScreenState extends State<MedicineListScreen> {
                   customDays: customDays.toList()..sort(),
                   photoPath: photoPath,
                 );
+
+                // AI Safety & Interaction Guard — only for genuinely new
+                // medicines. Editing an existing one doesn't introduce a
+                // new drug into the mix, so re-checking it against
+                // itself would just be noise (and an extra AI call) on
+                // every routine edit like changing a reminder time.
+                if (existing == null) {
+                  final proceed = await _runInteractionCheck(
+                    ctx,
+                    lang: lang,
+                    newMedicine: medicine,
+                  );
+                  if (!proceed) return;
+                }
 
                 // Save the medicine itself FIRST and unconditionally. Reminder
                 // scheduling is handled separately below so that a permission

@@ -9,6 +9,12 @@ class UserProfile {
   final String? gender;
   final String? photoPath;
   final String bio;
+  final String? bloodGroup;
+  // Free-text, comma-separated — kept simple (no separate table) since
+  // these only ever need to be displayed as a list, never queried
+  // individually. See EmergencyCardScreen for where this is used.
+  final String? allergies;
+  final String? chronicConditions;
 
   UserProfile({
     required this.id,
@@ -21,6 +27,9 @@ class UserProfile {
     this.gender,
     this.photoPath,
     this.bio = '',
+    this.bloodGroup,
+    this.allergies,
+    this.chronicConditions,
   });
 
   /// Body Mass Index, if both weight and height are known.
@@ -42,6 +51,9 @@ class UserProfile {
       'gender': gender,
       'photoPath': photoPath,
       'bio': bio,
+      'bloodGroup': bloodGroup,
+      'allergies': allergies,
+      'chronicConditions': chronicConditions,
     };
   }
 
@@ -57,6 +69,9 @@ class UserProfile {
       gender: map['gender'],
       photoPath: map['photoPath'],
       bio: map['bio'] ?? '',
+      bloodGroup: map['bloodGroup'],
+      allergies: map['allergies'],
+      chronicConditions: map['chronicConditions'],
     );
   }
 
@@ -68,6 +83,9 @@ class UserProfile {
     String? gender,
     String? photoPath,
     String? bio,
+    String? bloodGroup,
+    String? allergies,
+    String? chronicConditions,
   }) {
     return UserProfile(
       id: id,
@@ -80,6 +98,9 @@ class UserProfile {
       gender: gender ?? this.gender,
       photoPath: photoPath ?? this.photoPath,
       bio: bio ?? this.bio,
+      bloodGroup: bloodGroup ?? this.bloodGroup,
+      allergies: allergies ?? this.allergies,
+      chronicConditions: chronicConditions ?? this.chronicConditions,
     );
   }
 }

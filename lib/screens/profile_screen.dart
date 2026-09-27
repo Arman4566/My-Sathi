@@ -7,6 +7,7 @@ import '../services/auth_service.dart';
 import '../services/local_file_storage_service.dart';
 import '../services/settings_service.dart';
 import '../services/app_text.dart';
+import 'emergency_card_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -250,6 +251,55 @@ class _ProfileScreenState extends State<ProfileScreen> {
               if (choice != null) _saveProfile(p.copyWith(gender: choice));
             },
           ),
+          const Divider(height: 1),
+          _infoRow(
+            icon: Icons.bloodtype_outlined,
+            label: 'Blood group',
+            value: p.bloodGroup ?? AppText.t('not_set', lang),
+            onTap: () async {
+              const groups = [
+                'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'
+              ];
+              final choice = await showDialog<String>(
+                context: context,
+                builder: (ctx) => SimpleDialog(
+                  title: const Text('Blood group'),
+                  children: [
+                    for (final g in groups)
+                      SimpleDialogOption(
+                        onPressed: () => Navigator.pop(ctx, g),
+                        child: Text(g),
+                      ),
+                  ],
+                ),
+              );
+              if (choice != null) _saveProfile(p.copyWith(bloodGroup: choice));
+            },
+          ),
+          _infoRow(
+            icon: Icons.warning_amber_outlined,
+            label: 'Allergies',
+            value: (p.allergies == null || p.allergies!.isEmpty)
+                ? AppText.t('not_set', lang)
+                : p.allergies!,
+            onTap: () => _editField(
+              label: 'allergies (comma-separated)',
+              currentValue: p.allergies ?? '',
+              onSave: (v) => _saveProfile(p.copyWith(allergies: v)),
+            ),
+          ),
+          _infoRow(
+            icon: Icons.local_hospital_outlined,
+            label: 'Chronic conditions',
+            value: (p.chronicConditions == null || p.chronicConditions!.isEmpty)
+                ? AppText.t('not_set', lang)
+                : p.chronicConditions!,
+            onTap: () => _editField(
+              label: 'chronic conditions (comma-separated)',
+              currentValue: p.chronicConditions ?? '',
+              onSave: (v) => _saveProfile(p.copyWith(chronicConditions: v)),
+            ),
+          ),
           if (bmi != null)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
@@ -265,6 +315,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     style: const TextStyle(fontWeight: FontWeight.w600)),
               ),
             ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            child: ElevatedButton.icon(
+              onPressed: () => Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const EmergencyCardScreen())),
+              icon: const Icon(Icons.medical_information_outlined),
+              label: const Text('Generate Emergency Card'),
+            ),
+          ),
           const SizedBox(height: 24),
         ],
       ),

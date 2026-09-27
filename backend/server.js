@@ -13,6 +13,8 @@ const healthRecordsRouter = require('./health_records');
 const careContactsRouter = require('./care_contacts');
 const medicineDosesRouter = require('./medicine_doses');
 const xrayReportsRouter = require('./xray_reports');
+const emergencyCardRouter = require('./emergency_card');
+const doctorsRouter = require('./doctors');
 const { router: appointmentCallsRouter, twilioWebhookRouter, startScheduledCallPoller } = require('./appointment_calls');
 const { startWhatsAppReminderPoller } = require('./whatsapp_reminders');
 
@@ -58,6 +60,11 @@ app.use('/api/medicine-doses', medicineDosesRouter);
 // Chest X-ray "AI Diagnostic Report" — real pretrained-model pipeline,
 // see xray_reports.js and xray_ai_service/README.md.
 app.use('/api/xray-reports', xrayReportsRouter);
+// Emergency Medical Card — see emergency_card.js / emergency_card_pdf.js.
+app.use('/api/emergency-card', emergencyCardRouter);
+// AI-assisted "which specialist" matching + Google Places nearby search,
+// filtered to well-reviewed/experienced doctors only — see doctors.js.
+app.use('/api/doctors', doctorsRouter);
 // Authenticated endpoints the Flutter app calls (start a call, poll status).
 app.use('/api/appointment-calls', appointmentCallsRouter);
 // Unauthenticated webhooks Twilio itself calls back into during a live
@@ -491,6 +498,116 @@ app.post('/api/analyze-scan', async (req, res) => {
       });
     }
     res.status(500).json({ error: 'analyze_failed', message: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------
+// 5) AI Safety & Interaction Guard — cross-checks a medicine (newly
+//    scanned or manually added) against the patient's current active
+//    medicines for drug-drug interactions, plus general food/timing
+//    precautions for the new medicine itself.
+//
+//    Same "AI suggests, human confirms" posture as everywhere else: this
+//    is a WARNING surface only. It never blocks or auto-edits a save —
+//    the Flutter app always lets the patient dismiss and continue, and
+//    always tells them to confirm anything serious with a pharmacist or
+//    doctor. Gemini is not a validated clinical interaction database
+//    (like a real drug-interaction API such as RxNorm/DDInter would be),
+//    so the prompt is written to be conservative: prefer flagging a
+//    plausible interaction over staying silent, but never invent a
+//    specific mechanism or statistic it isn't confident about.
+// ---------------------------------------------------------------------
+const INTERACTION_CHECK_PROMPT = `You are a medication-safety checker
+inside a patient app called Sathi. You are NOT a doctor or pharmacist
+and must never phrase anything as a diagnosis or a definitive medical
+instruction — only as information worth raising with a real pharmacist
+or doctor.
+
+You will be given:
+1. "newMedicines": one or more medicines the patient is about to add.
+2. "currentMedicines": medicines the patient is already actively taking.
+
+For EACH medicine in newMedicines, do two things:
+
+A) DRUG-DRUG INTERACTIONS: compare it against every medicine in
+currentMedicines (and against the other medicines in newMedicines
+itself, if more than one). Only report a pairing you have reasonable
+general pharmacological knowledge of (e.g. well-known interactions like
+NSAIDs with blood thinners, or two medicines that both lower blood
+pressure). If you are not reasonably confident a pairing is a real,
+commonly-documented interaction, DO NOT include it — do not guess or
+pad the list. It is fine, and expected, for this list to be empty.
+Rate each one you do include as "major" (potentially dangerous, patient
+should contact a doctor/pharmacist before continuing), "moderate"
+(worth mentioning, usually manageable, e.g. space doses apart or watch
+for a specific side effect), or "minor" (low concern, awareness only).
+
+For every interaction you include, the "reason" field MUST explain the
+actual effect in plain language — WHAT can happen and, where relevant,
+WHY — not just that "these interact". For example, instead of "May
+interact with existing medicine", write something like "Both medicines
+lower blood pressure, so taking them together can drop it too low and
+cause dizziness or fainting." A patient reading only the reason field,
+with no other context, should understand the real-world risk.
+
+B) FOOD / TIMING PRECAUTIONS: general, widely-known guidance for taking
+THIS medicine specifically (e.g. "take with food to avoid stomach
+upset", "avoid dairy/calcium within 2 hours", "avoid alcohol",
+"avoid grapefruit juice"). Leave this as an empty string if you don't
+have confident, commonly-known guidance for this specific medicine —
+never invent one to fill the field.
+
+Return ONLY valid JSON, no prose, no markdown fences, in this exact
+shape:
+{"results":[{"medicineName":"","foodPrecaution":"","interactions":[{"withMedicine":"","severity":"major|moderate|minor","reason":""}]}]}
+
+Keep every "reason" one short plain-language sentence (under ~30 words)
+a non-medical patient can understand, but it must always name the
+concrete effect/risk, not just state that an interaction exists. Never
+use markdown.`;
+
+app.post('/api/check-interactions', async (req, res) => {
+  try {
+    const { newMedicines, currentMedicines } = req.body;
+
+    if (!Array.isArray(newMedicines) || newMedicines.length === 0) {
+      return res.status(400).json({ error: 'missing_new_medicines' });
+    }
+
+    // Trim to just the fields the model actually needs — keeps the
+    // prompt small and avoids leaking unrelated app data (ids, photo
+    // paths, reminder times) into the request.
+    const trim = (m) => ({ name: m?.name || '', dosage: m?.dosage || '' });
+
+    const response = await generateWithRetry({
+      model: PRIMARY_MODEL,
+      contents: JSON.stringify({
+        newMedicines: (newMedicines || []).map(trim),
+        currentMedicines: (currentMedicines || []).map(trim),
+      }),
+      config: {
+        systemInstruction: INTERACTION_CHECK_PROMPT,
+        responseMimeType: 'application/json',
+      },
+    });
+
+    const parsed = JSON.parse(response.text);
+    res.json(parsed);
+  } catch (err) {
+    console.error(err);
+    if (isOverloadedError(err)) {
+      return res.status(503).json({
+        error: 'ai_overloaded',
+        message: 'The AI service is busy right now. Please try again in a moment.',
+      });
+    }
+    if (isQuotaExceededError(err)) {
+      return res.status(429).json({
+        error: 'ai_quota_exceeded',
+        message: 'The AI service has hit its usage limit for now. Please try again later.',
+      });
+    }
+    res.status(500).json({ error: 'interaction_check_failed', message: err.message });
   }
 });
 

@@ -35,6 +35,9 @@ function toProfileJson(row) {
     gender: row.gender,
     bio: row.bio,
     photoPath: row.photo_path,
+    bloodGroup: row.blood_group,
+    allergies: row.allergies,
+    chronicConditions: row.chronic_conditions,
   };
 }
 
@@ -136,7 +139,10 @@ router.get('/me', requireAuth, async (req, res) => {
 // ---------------------------------------------------------------------
 router.put('/me', requireAuth, async (req, res) => {
   try {
-    const { name, age, weightKg, heightCm, gender, bio, photoPath } = req.body;
+    const {
+      name, age, weightKg, heightCm, gender, bio, photoPath,
+      bloodGroup, allergies, chronicConditions,
+    } = req.body;
     const result = await pool.query(
       `UPDATE users SET
          name = COALESCE($1, name),
@@ -145,9 +151,13 @@ router.put('/me', requireAuth, async (req, res) => {
          height_cm = COALESCE($4, height_cm),
          gender = COALESCE($5, gender),
          bio = COALESCE($6, bio),
-         photo_path = COALESCE($7, photo_path)
-       WHERE id = $8 RETURNING *`,
-      [name, age, weightKg, heightCm, gender, bio, photoPath, req.userId]
+         photo_path = COALESCE($7, photo_path),
+         blood_group = COALESCE($8, blood_group),
+         allergies = COALESCE($9, allergies),
+         chronic_conditions = COALESCE($10, chronic_conditions)
+       WHERE id = $11 RETURNING *`,
+      [name, age, weightKg, heightCm, gender, bio, photoPath,
+        bloodGroup, allergies, chronicConditions, req.userId]
     );
     res.json({ profile: toProfileJson(result.rows[0]) });
   } catch (err) {

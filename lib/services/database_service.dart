@@ -34,7 +34,7 @@ class DatabaseService {
 
     return openDatabase(
       path,
-      version: 7,
+      version: 8,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE medicines (
@@ -84,7 +84,10 @@ class DatabaseService {
             heightCm REAL,
             gender TEXT,
             photoPath TEXT,
-            bio TEXT
+            bio TEXT,
+            bloodGroup TEXT,
+            allergies TEXT,
+            chronicConditions TEXT
           )
         ''');
         await db.execute('''
@@ -268,6 +271,14 @@ class DatabaseService {
               date TEXT
             )
           ''');
+        }
+        if (oldVersion < 8) {
+          // Emergency Medical Card fields (blood group, allergies,
+          // chronic conditions) — see EmergencyCardScreen / auth.js.
+          await db.execute('ALTER TABLE profiles ADD COLUMN bloodGroup TEXT');
+          await db.execute('ALTER TABLE profiles ADD COLUMN allergies TEXT');
+          await db.execute(
+              'ALTER TABLE profiles ADD COLUMN chronicConditions TEXT');
         }
       },
     );

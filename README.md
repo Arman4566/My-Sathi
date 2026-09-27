@@ -67,6 +67,9 @@ isn't empty on first open.
 - [ ] Login on a second device pulls the same data down (cloud sync)
 - [ ] Forgot-password flow sends a real reset code by email
 - [ ] Dark mode and language switch apply across the whole app
+- [ ] Adding a medicine that interacts with an existing one shows a safety warning
+- [ ] Profile → Emergency Medical Card generates a downloadable PDF
+- [ ] "Find doctors" on the home screen returns nearby, well-reviewed doctors
 
 ---
 
@@ -145,7 +148,18 @@ which lives in `backend/server.js` — never inside the app. Until deployed:
    - Already deployed this backend before? `schema.sql` is safe to
      re-run — it only creates tables that don't exist yet, so re-running
      it after an update just adds any new tables without touching your
-     existing data.
+     existing data. One exception: the Emergency Medical Card feature
+     added three new *columns* to the existing `users` table
+     (`blood_group`, `allergies`, `chronic_conditions`), and `CREATE
+     TABLE IF NOT EXISTS` won't add columns to a table that already
+     exists. If you had a database from before this feature, run this
+     once instead (also included as a comment directly in
+     `schema.sql`):
+     ```sql
+     ALTER TABLE users ADD COLUMN IF NOT EXISTS blood_group TEXT;
+     ALTER TABLE users ADD COLUMN IF NOT EXISTS allergies TEXT;
+     ALTER TABLE users ADD COLUMN IF NOT EXISTS chronic_conditions TEXT;
+     ```
 4. Put the `backend/` folder in its own GitHub repo (or a subfolder of an
    existing one).
 5. Go to render.com → New → **Web Service** → connect that repo.
@@ -170,6 +184,25 @@ which lives in `backend/server.js` — never inside the app. Until deployed:
 
 (Free-tier Render services "sleep" after inactivity — the first request
 after a while can take 20–30 seconds. Normal, not a bug.)
+
+### "Find nearby doctors"
+
+Lets a patient describe how they're feeling (or pick a specialty
+directly) and see nearby doctors/clinics/hospitals, using their phone's
+GPS location. This looks results up from **OpenStreetMap** via the free
+Overpass API — no API key, account, or billing setup needed, so there's
+nothing to configure for this feature.
+
+Because it's OSM data rather than Google Places, there's no rating or
+review count (OSM doesn't have that data) — results are instead sorted
+by distance from the patient, closest first, with a bias toward places
+whose OSM tags actually match the requested specialty. Coverage and
+detail (phone numbers, addresses, open/closed status) depend on how
+thoroughly each area has been mapped in OpenStreetMap, so it may be
+sparser than Google Places in some regions.
+
+The specialist-matching step reuses the same Gemini client/quota as the
+rest of the app (see `backend/ai.js`) — no extra AI setup needed.
 
 ### Setting up the AI phone-call booking feature (optional)
 
@@ -304,6 +337,36 @@ prescription" moved into the quick-actions grid.
 The chatbot has a microphone button (uses `speech_to_text`) — tap to
 dictate instead of typing.
 
+### Find nearby doctors
+From the home screen, describe how you're feeling (e.g. "chest pain and
+shortness of breath") or pick a specialty chip directly. The backend maps
+your description to one specialist category (never a diagnosis — see the
+comments in `backend/doctors.js`), then searches Google Places around
+your device's current location. Only doctors that meet a minimum rating
+and review count are ever shown, so the list stays to well-reviewed,
+established practices — each result has one-tap "Directions" and "Call"
+buttons. See "Setting up 'Find nearby doctors'" above to enable it.
+
+### Emergency Medical Card
+From your Profile, generate a one-page card with your blood group,
+allergies, chronic conditions, and current medicines — plus one short
+AI-written plain-language summary line (everything else on the card is
+your own data, passed through unmodified; see the comments in
+`backend/emergency_card.js` for why only that one line is AI-generated).
+Download it as a PDF to keep on your phone or share with family. Add
+your blood group/allergies/chronic conditions under Profile → Edit if
+you haven't already — those fields feed this card.
+
+### AI Safety & Interaction Guard
+Whenever you scan or manually add a new medicine, it's automatically
+checked against your current active medicines for known drug-drug
+interactions, plus general food/timing precautions for the new medicine
+itself (e.g. "take with food", "avoid alcohol"). This is a warning
+surface only — see `INTERACTION_CHECK_PROMPT` in `backend/server.js` —
+it never blocks or edits a save; you can always dismiss the warning and
+continue, and a major interaction always tells you to confirm with a
+doctor or pharmacist first.
+
 ### A chatbot that knows your data — and can act on it (with confirmation)
 Every message now includes your current medicines, appointments, recent
 report summaries, and profile as context, so you can ask things like
@@ -342,6 +405,13 @@ flutter run
      uses the modern MediaStore API on Android 10+ without this. -->
 <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
     android:maxSdkVersion="29"/>
+<!-- "Find nearby doctors" — needs the device's current location to
+     search around it (geolocator package). ACCESS_COARSE_LOCATION alone
+     is enough for the ~city-block accuracy this feature needs, but
+     ACCESS_FINE_LOCATION is included too since most devices grant both
+     together. -->
+<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
 ```
 `RECORD_AUDIO` is for voice input in the chatbot; `USE_FULL_SCREEN_INTENT`
 is for the alarm-style reminders. Also: core library desugaring must be
@@ -407,7 +477,9 @@ voice input) plus `NSSpeechRecognitionUsageDescription`. For "Save to
 gallery" in the prescription/report fullscreen viewer (`gal` package),
 also add `NSPhotoLibraryAddUsageDescription` — a short string like "Save
 scanned prescriptions and reports to your photos" is shown to the user
-the first time they tap Save.
+the first time they tap Save. For "Find nearby doctors", also add
+`NSLocationWhenInUseUsageDescription` — e.g. "Used to find well-reviewed
+doctors near you."
 
 ### 5. Get accurate device timezones (recommended)
 Add `flutter_timezone` and call `tz.setLocalLocation(...)` at startup so

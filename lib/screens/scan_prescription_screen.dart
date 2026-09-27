@@ -5,11 +5,14 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import '../models/medicine.dart';
 import '../models/prescription.dart';
+import '../models/interaction_check.dart';
 import '../services/database_service.dart';
 import '../services/notification_service.dart';
 import '../services/ocr_service.dart';
 import '../services/settings_service.dart';
 import '../services/app_text.dart';
+import '../services/ai_backend_service.dart';
+import '../widgets/interaction_warning_dialog.dart';
 
 const _weekdayLabels = {
   1: 'Mon',
@@ -271,6 +274,41 @@ class _ScanPrescriptionScreenState extends State<ScanPrescriptionScreen> {
     final prescriptionId = const Uuid().v4();
     var reminderFailures = 0;
     var skipped = 0;
+
+    // AI Safety & Interaction Guard — check every valid suggestion in
+    // this batch against the patient's current active medicines (and
+    // against each other, since a prescription can add two interacting
+    // medicines at once) BEFORE anything is written to the database.
+    // Same "AI suggests, human confirms" posture as the rest of the
+    // scan flow: a failed check never blocks saving, it just shows a
+    // neutral notice instead of silently skipping the warning.
+    final validSuggestions =
+        _suggestions.where((s) => s.name.trim().isNotEmpty && s.times.isNotEmpty).toList();
+    if (validSuggestions.isNotEmpty) {
+      InteractionCheckResult? result;
+      var unavailable = false;
+      try {
+        final currentMedicines = await DatabaseService.instance.getActiveMedicines();
+        result = await AiBackendService.instance.checkInteractions(
+          newMedicines: validSuggestions
+              .map((s) => {'name': s.name.trim(), 'dosage': s.dosage.trim()})
+              .toList(),
+          currentMedicines:
+              currentMedicines.map((m) => {'name': m.name, 'dosage': m.dosage}).toList(),
+        );
+      } catch (_) {
+        unavailable = true;
+      }
+
+      if (!mounted) return;
+      final proceed = await showInteractionWarningDialog(
+        context,
+        lang: lang,
+        result: result,
+        unavailable: unavailable,
+      );
+      if (!proceed) return;
+    }
 
     try {
       await DatabaseService.instance.insertPrescription(Prescription(

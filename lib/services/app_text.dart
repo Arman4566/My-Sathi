@@ -309,6 +309,49 @@ class AppText {
       'time_for_medicines_multiple': 'Time to take {count} medicines 💊',
       'upcoming_appointment_title': 'Upcoming appointment 🗓️',
       'appointment_body': 'Dr. {doctor} at {time} — {location}',
+      // AI Safety & Interaction Guard
+      'checking_interactions': 'Checking for interactions…',
+      'interaction_warning_title': 'Safety check',
+      'interaction_none_found':
+          'No known interactions found with your current medicines.',
+      'interaction_major_banner':
+          '⚠️ A potentially serious interaction was found. Please check with your doctor or pharmacist before starting this medicine.',
+      'interaction_food_precaution': 'Food / timing note',
+      'interaction_with': 'With {medicine}',
+      'interaction_reason_label': 'Reason',
+      'interaction_severity_major': 'Major',
+      'interaction_severity_moderate': 'Moderate',
+      'interaction_severity_minor': 'Minor',
+      'interaction_disclaimer':
+          'This is an AI-assisted check, not a substitute for a pharmacist or doctor\u2019s advice.',
+      'interaction_check_unavailable':
+          'Could not run the safety check right now, so no interaction warnings are shown below — you can still save, but consider checking with a pharmacist.',
+      'interaction_continue_anyway': 'Continue anyway',
+      'interaction_go_back': 'Go back and review',
+      'interaction_ok': 'OK, understood',
+      // Find nearby doctors
+      'find_doctors': 'Find doctors',
+      'find_doctors_desc':
+          "Tell us what's bothering you (or pick a specialty) and we'll "
+              'find nearby doctors near your current location.',
+      'describe_symptom_label': "What's bothering you?",
+      'describe_symptom_hint': 'e.g. "chest pain and shortness of breath"',
+      'or_pick_specialty': 'Or pick a specialty directly',
+      'search_nearby_doctors': 'Find nearby doctors',
+      'finding_doctors': 'Finding doctors…',
+      'find_doctors_disclaimer':
+          "This helps you find a specialist to talk to — it isn't a "
+              'diagnosis. In an emergency, contact local emergency services '
+              'immediately.',
+      'showing_specialist': 'Showing: {specialist}',
+      'osm_data_note': 'Results from OpenStreetMap, closest first.',
+      'no_doctors_found':
+          'No doctors found nearby yet. Try a wider search area.',
+      'widen_search': 'Search a wider area',
+      'open_now': 'Open now',
+      'closed_now': 'Closed',
+      'directions': 'Directions',
+      'call': 'Call',
     },
     'hi': {
       'good_day': 'नमस्ते',
@@ -614,6 +657,46 @@ class AppText {
       'time_for_medicines_multiple': '{count} दवाइयाँ लेने का समय हो गया 💊',
       'upcoming_appointment_title': 'आगामी अपॉइंटमेंट 🗓️',
       'appointment_body': 'डॉ. {doctor}, {time} बजे — {location}',
+      // AI Safety & Interaction Guard
+      'checking_interactions': 'इंटरैक्शन जाँचे जा रहे हैं…',
+      'interaction_warning_title': 'सुरक्षा जाँच',
+      'interaction_none_found':
+          'आपकी मौजूदा दवाइयों के साथ कोई ज्ञात इंटरैक्शन नहीं मिला।',
+      'interaction_major_banner':
+          '⚠️ एक संभावित गंभीर इंटरैक्शन मिला है। यह दवा शुरू करने से पहले कृपया अपने डॉक्टर या फार्मासिस्ट से सलाह लें।',
+      'interaction_food_precaution': 'भोजन / समय संबंधी सलाह',
+      'interaction_with': '{medicine} के साथ',
+      'interaction_reason_label': 'कारण',
+      'interaction_severity_major': 'गंभीर',
+      'interaction_severity_moderate': 'मध्यम',
+      'interaction_severity_minor': 'मामूली',
+      'interaction_disclaimer':
+          'यह एक AI-सहायक जाँच है, फार्मासिस्ट या डॉक्टर की सलाह का विकल्प नहीं है।',
+      'interaction_check_unavailable':
+          'अभी सुरक्षा जाँच नहीं हो सकी, इसलिए नीचे कोई चेतावनी नहीं दिखाई गई है — आप फिर भी सेव कर सकते हैं, लेकिन फार्मासिस्ट से जाँच कराने पर विचार करें।',
+      'interaction_continue_anyway': 'फिर भी जारी रखें',
+      'interaction_go_back': 'वापस जाएं और देखें',
+      'interaction_ok': 'ठीक है, समझ गया',
+      // Find nearby doctors
+      'find_doctors': 'डॉक्टर खोजें',
+      'find_doctors_desc':
+          'बताएं कि आपको क्या तकलीफ़ है (या कोई विशेषज्ञता चुनें), और हम आपके वर्तमान स्थान के पास डॉक्टर खोजेंगे।',
+      'describe_symptom_label': 'आपको क्या तकलीफ़ है?',
+      'describe_symptom_hint': 'जैसे "सीने में दर्द और सांस लेने में तकलीफ़"',
+      'or_pick_specialty': 'या सीधे विशेषज्ञता चुनें',
+      'search_nearby_doctors': 'आस-पास के डॉक्टर खोजें',
+      'finding_doctors': 'डॉक्टर खोजे जा रहे हैं…',
+      'find_doctors_disclaimer':
+          'यह आपको सही विशेषज्ञ खोजने में मदद करता है — यह निदान (diagnosis) नहीं है। आपातकाल में तुरंत स्थानीय आपातकालीन सेवाओं से संपर्क करें।',
+      'showing_specialist': 'दिखा रहे हैं: {specialist}',
+      'osm_data_note': 'OpenStreetMap से परिणाम, सबसे नज़दीक वाले पहले।',
+      'no_doctors_found':
+          'आस-पास अभी तक कोई डॉक्टर नहीं मिला। बड़े क्षेत्र में खोजें।',
+      'widen_search': 'बड़े क्षेत्र में खोजें',
+      'open_now': 'अभी खुला है',
+      'closed_now': 'बंद है',
+      'directions': 'दिशा-निर्देश',
+      'call': 'कॉल करें',
     },
   };
 

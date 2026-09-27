@@ -132,6 +132,9 @@ class AuthService {
         'gender': updated.gender,
         'bio': updated.bio,
         'photoPath': updated.photoPath,
+        'bloodGroup': updated.bloodGroup,
+        'allergies': updated.allergies,
+        'chronicConditions': updated.chronicConditions,
       }),
     );
 
@@ -172,6 +175,9 @@ class AuthService {
       'gender': profile.gender,
       'bio': profile.bio,
       'photoPath': profile.photoPath,
+      'bloodGroup': profile.bloodGroup,
+      'allergies': profile.allergies,
+      'chronicConditions': profile.chronicConditions,
     }));
   }
 
@@ -191,6 +197,9 @@ class AuthService {
       gender: json['gender'],
       bio: json['bio'] ?? '',
       photoPath: json['photoPath'],
+      bloodGroup: json['bloodGroup'],
+      allergies: json['allergies'],
+      chronicConditions: json['chronicConditions'],
     );
   }
 }

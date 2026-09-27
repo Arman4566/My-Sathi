@@ -16,6 +16,7 @@ import 'reports_screen.dart';
 import 'health_screen.dart';
 import 'profile_screen.dart';
 import 'settings_screen.dart';
+import 'find_doctors_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -279,6 +280,20 @@ class _HomeScreenState extends State<HomeScreen> {
                 label: AppText.t('reports', lang),
                 onTap: () => Navigator.push(context,
                     MaterialPageRoute(builder: (_) => const ReportsScreen())),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _actionButton(
+                context,
+                icon: Icons.local_hospital_outlined,
+                label: AppText.t('find_doctors', lang),
+                onTap: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const FindDoctorsScreen())),
               ),
             ),
           ],

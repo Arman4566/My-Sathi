@@ -59,6 +59,11 @@ dependencies:
   # Line charts for the "Lab Trends" screen (blood test values over time)
   fl_chart: ^0.69.0
 
+  # "Find nearby doctors": device GPS location, and launching the phone's
+  # own Maps/Phone apps for directions/calling a doctor from the results.
+  geolocator: ^13.0.1
+  url_launcher: ^6.3.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

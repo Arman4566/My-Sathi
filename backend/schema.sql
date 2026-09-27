@@ -19,8 +19,23 @@ CREATE TABLE IF NOT EXISTS users (
   gender TEXT,
   bio TEXT DEFAULT '',
   photo_path TEXT,
+  -- Added for the Emergency Medical Card feature (see emergency_card.js /
+  -- emergency_card_pdf.js): blood group + free-text allergies/chronic
+  -- conditions the patient can share instantly with family or an ER
+  -- doctor. Nullable/optional, same as the other profile fields above —
+  -- COALESCE-updated via PUT /api/auth/me so leaving a field blank in
+  -- one edit never wipes an existing value.
+  blood_group TEXT,
+  allergies TEXT,
+  chronic_conditions TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
 );
+-- If you already have a deployed database from before this feature,
+-- run this once against it instead of relying on schema.sql re-running
+-- (most Postgres setups only execute this file on first init):
+--   ALTER TABLE users ADD COLUMN IF NOT EXISTS blood_group TEXT;
+--   ALTER TABLE users ADD COLUMN IF NOT EXISTS allergies TEXT;
+--   ALTER TABLE users ADD COLUMN IF NOT EXISTS chronic_conditions TEXT;
 
 -- Password-reset tokens for the forgot-password flow. Short-lived and
 -- single-use — see auth.js for how they're issued/consumed.

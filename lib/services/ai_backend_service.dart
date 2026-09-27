@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'ocr_service.dart';
+import '../models/interaction_check.dart';
 
 /// A change the assistant is proposing based on the conversation — e.g.
 /// "add this medicine". The app ALWAYS shows this to the user as a
@@ -41,7 +42,7 @@ class AiBackendService {
   // Replace with your deployed backend URL. Shared by auth_service.dart
   // and cloud_sync_service.dart too, so there's only one place to update
   // after deploying.
-  static const String baseUrl = 'https://YOUR-BACKEND-URL.example.com';
+  static const String baseUrl = 'https://my-sathi3.onrender.com';
   static const String _baseUrl = baseUrl;
 
   /// Backend error responses may include a friendlier `message` (e.g. for
@@ -190,6 +191,95 @@ class AiBackendService {
     final data = jsonDecode(res.body) as Map<String, dynamic>;
     return ScanAnalysis.fromJson(data['analysis'] as Map<String, dynamic>);
   }
+
+  /// "AI Safety & Interaction Guard" — checks one or more medicines the
+  /// patient is about to add against their current active medicines for
+  /// drug-drug interactions, plus general food/timing precautions for
+  /// each new medicine. See INTERACTION_CHECK_PROMPT in server.js for
+  /// exactly how conservative the model is instructed to be (an empty
+  /// result is expected and fine — it should never pad the list to seem
+  /// thorough).
+  ///
+  /// This is informational only, same "AI suggests, human confirms"
+  /// pattern as the rest of the app: the caller decides what to do with
+  /// the result (e.g. show a warning dialog) and never has a save
+  /// blocked by this call failing — see the callers in
+  /// scan_prescription_screen.dart and medicine_list_screen.dart, which
+  /// treat a failed check as "no warning available" rather than an
+  /// error the user has to deal with.
+  Future<InteractionCheckResult> checkInteractions({
+    required List<Map<String, dynamic>> newMedicines,
+    required List<Map<String, dynamic>> currentMedicines,
+  }) async {
+    final res = await http.post(
+      Uri.parse('$_baseUrl/api/check-interactions'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'newMedicines': newMedicines,
+        'currentMedicines': currentMedicines,
+      }),
+    );
+
+    if (res.statusCode != 200) {
+      throw Exception(_extractErrorMessage(
+          res, 'Interaction check failed: ${res.statusCode}'));
+    }
+
+    final data = jsonDecode(res.body) as Map<String, dynamic>;
+    return InteractionCheckResult.fromJson(data);
+  }
+
+  /// "Emergency Medical Card" — sends the patient's blood group,
+  /// allergies, chronic conditions, and current medicines to the backend,
+  /// which returns a short AI-written plain-language recap PLUS a ready
+  /// -to-share PDF built from that same data. See
+  /// EMERGENCY_CARD_PROMPT/buildEmergencyCardPdf in the backend for why
+  /// only the recap sentence is AI-generated — every field that actually
+  /// matters in an emergency (allergies, medicines, blood group) is the
+  /// patient's own data, placed on the PDF unmodified, never left to the
+  /// model to reconstruct.
+  Future<EmergencyCardResult> generateEmergencyCard({
+    required String patientName,
+    int? age,
+    String? gender,
+    String? bloodGroup,
+    String? allergies,
+    String? chronicConditions,
+    required List<Map<String, dynamic>> medicines,
+  }) async {
+    final res = await http.post(
+      Uri.parse('$_baseUrl/api/emergency-card'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'patientName': patientName,
+        'age': age,
+        'gender': gender,
+        'bloodGroup': bloodGroup,
+        'allergies': allergies,
+        'chronicConditions': chronicConditions,
+        'medicines': medicines,
+      }),
+    );
+
+    if (res.statusCode != 200) {
+      throw Exception(_extractErrorMessage(
+          res, 'Could not generate the emergency card: ${res.statusCode}'));
+    }
+
+    final data = jsonDecode(res.body) as Map<String, dynamic>;
+    return EmergencyCardResult(
+      summary: data['summary'] as String? ?? '',
+      pdfBytes: base64Decode(data['pdfBase64'] as String),
+    );
+  }
+}
+
+/// Result of POST /api/emergency-card — see
+/// AiBackendService.generateEmergencyCard.
+class EmergencyCardResult {
+  final String summary;
+  final List<int> pdfBytes;
+  EmergencyCardResult({required this.summary, required this.pdfBytes});
 }
 
 /// Result of the combined /api/summarize-report call: a plain-language

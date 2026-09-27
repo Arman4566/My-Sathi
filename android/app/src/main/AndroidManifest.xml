@@ -12,10 +12,18 @@
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
     android:maxSdkVersion="29"/> 
-    <!-- Hardware Permissions -->
+    <!-- Hardware Permissions --> 
     <uses-permission android:name="android.permission.CAMERA"/>
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
-
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+    android:maxSdkVersion="29"/>
+    <!-- "Find nearby doctors" — needs the device's current location to
+     search around it (geolocator package). ACCESS_COARSE_LOCATION alone
+     is enough for the ~city-block accuracy this feature needs, but
+     ACCESS_FINE_LOCATION is included too since most devices grant both
+     together. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <application
         android:label="My Sathi"
         android:name="${applicationName}"
