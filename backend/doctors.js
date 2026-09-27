@@ -106,7 +106,16 @@ async function pickSpecialist(medicalCondition) {
 }
 
 const MAX_RESULTS = 15;
-const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
+// The main overpass-api.de instance is a free, volunteer-run service and
+// is frequently overloaded or briefly unreachable. We try a short list of
+// known public mirrors in order and use whichever answers first, instead
+// of failing the whole search because one instance is down.
+const OVERPASS_URLS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.osm.ch/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+];
 const OVERPASS_TIMEOUT_SECONDS = 20;
 
 function haversineMeters(lat1, lon1, lat2, lon2) {
@@ -188,7 +197,7 @@ async function queryOverpass(latitude, longitude, radiusMeters) {
     out center tags;
   `;
 
-  const response = await fetch(OVERPASS_URL, {
+  const fetchOptions = {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -196,16 +205,30 @@ async function queryOverpass(latitude, longitude, radiusMeters) {
       'User-Agent': 'PatientCareApp/1.0 (find-nearby-doctors feature)',
     },
     body: `data=${encodeURIComponent(query)}`,
-  });
+  };
 
-  if (!response.ok) {
-    const err = new Error(`Overpass API returned ${response.status}`);
-    err.overpassStatus = response.status;
-    throw err;
+  let lastError;
+  for (const url of OVERPASS_URLS) {
+    try {
+      const response = await fetch(url, fetchOptions);
+      if (!response.ok) {
+        // A 4xx/5xx from this particular mirror — try the next one rather
+        // than failing outright.
+        lastError = new Error(`Overpass API (${url}) returned ${response.status}`);
+        continue;
+      }
+      const data = await response.json();
+      return Array.isArray(data.elements) ? data.elements : [];
+    } catch (err) {
+      // Network-level failure (the mirror is down/unreachable/refusing
+      // connections) — record it and try the next mirror in the list.
+      console.error(`Overpass mirror ${url} failed:`, err.message);
+      lastError = err;
+    }
   }
-
-  const data = await response.json();
-  return Array.isArray(data.elements) ? data.elements : [];
+  // Every mirror failed — surface the last error so the caller can show a
+  // clear "try again shortly" message instead of hanging.
+  throw lastError || new Error('All Overpass mirrors failed');
 }
 
 router.post('/nearby', async (req, res) => {
