@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/xray_report.dart';
@@ -48,18 +49,27 @@ class XrayReportService {
     String? patientId,
   }) async {
     final headers = await _authHeaders();
-    final res = await http
-        .post(
-          Uri.parse('$_baseUrl/api/xray-reports/analyze'),
-          headers: headers,
-          body: jsonEncode({
-            'imageBase64': base64Encode(imageBytes),
-            'mimeType': mimeType,
-            'patientName': patientName,
-            'patientId': patientId,
-          }),
-        )
-        .timeout(const Duration(seconds: 90));
+    // The backend now waits up to ~170s (waking an idle free-tier model
+    // service and retrying if it's busy), so the app must wait longer
+    // than that — the old 90s limit gave up before the backend did.
+    final http.Response res;
+    try {
+      res = await http
+          .post(
+            Uri.parse('$_baseUrl/api/xray-reports/analyze'),
+            headers: headers,
+            body: jsonEncode({
+              'imageBase64': base64Encode(imageBytes),
+              'mimeType': mimeType,
+              'patientName': patientName,
+              'patientId': patientId,
+            }),
+          )
+          .timeout(const Duration(seconds: 185));
+    } on TimeoutException {
+      throw Exception('The X-ray AI service is taking too long (it may be waking up). '
+          'Please wait a minute and try again.');
+    }
 
     if (res.statusCode != 200) {
       throw Exception(_extractErrorMessage(res, 'Could not generate the report (${res.statusCode}).'));

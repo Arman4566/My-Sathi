@@ -21,6 +21,58 @@ const { buildXrayReportPdf } = require('./xray_pdf');
 const router = express.Router();
 router.use(requireAuth);
 
+// HTTP headers can only contain plain Latin-1 characters. Report titles
+// contain an em dash ("Chest X-ray - Pneumonia ..."), and putting that
+// straight into Content-Disposition made Node throw ERR_INVALID_CHAR and
+// crash the download. Send a safe ASCII filename plus the real UTF-8 one
+// in the standard filename* parameter.
+function contentDisposition(title) {
+  const base = String(title || 'sathi-xray-report');
+  const ascii =
+    base.replace(/[^A-Za-z0-9 ._()-]/g, '-').replace(/-{2,}/g, '-').trim() || 'sathi-xray-report';
+  return `attachment; filename="${ascii}.pdf"; filename*=UTF-8''${encodeURIComponent(base + '.pdf')}`;
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// Statuses that mean "the model service is busy / waking up" rather than
+// "this image is bad" - worth waiting and retrying.
+const RETRYABLE_STATUSES = new Set([429, 502, 503, 504]);
+
+// Sends the image to the model service, retrying with backoff when it
+// answers 429/502/503/504. Free hosting (e.g. Render) returns these while
+// an idle instance is waking up or is overloaded, and previously a single
+// 429 immediately became "could not analyze this image". Everything
+// happens inside one overall deadline so we never outlive the app's wait.
+async function postToModelService(baseUrl, form, totalMs = 170000) {
+  const deadline = Date.now() + totalMs;
+  const maxAttempts = 4;
+  let status = 0;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    const upstream = await fetch(`${baseUrl}/analyze`, {
+      method: 'POST',
+      body: form,
+      signal: AbortSignal.timeout(remaining),
+    });
+    if (upstream.ok) return { ok: true, status: upstream.status, response: upstream };
+
+    status = upstream.status;
+    const text = await upstream.text().catch(() => '');
+    console.error(`X-ray model service error (attempt ${attempt}/${maxAttempts}):`, status, text.slice(0, 300));
+    if (!RETRYABLE_STATUSES.has(status) || attempt === maxAttempts) break;
+
+    const retryAfterSec = Number(upstream.headers.get('retry-after'));
+    const waitMs = Math.min(
+      20000,
+      Number.isFinite(retryAfterSec) && retryAfterSec > 0 ? retryAfterSec * 1000 : 4000 * 2 ** (attempt - 1)
+    );
+    if (deadline - Date.now() < waitMs + 5000) break; // not enough time left for another try
+    await sleep(waitMs);
+  }
+  return { ok: false, status, response: null };
+}
+
 function toJson(row) {
   return {
     id: row.id,
@@ -59,7 +111,7 @@ router.get('/:id/pdf', async (req, res) => {
     const row = result.rows[0];
     if (!row) return res.status(404).json({ error: 'not_found' });
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${row.title || 'sathi-xray-report'}.pdf"`);
+    res.setHeader('Content-Disposition', contentDisposition(row.title));
     res.send(row.pdf_data);
   } catch (err) {
     console.error(err);
@@ -101,32 +153,29 @@ router.post('/analyze', async (req, res) => {
 
     let modelResponse;
     try {
-      const upstream = await fetch(`${serviceUrl.replace(/\/$/, '')}/analyze`, {
-        method: 'POST',
-        body: form,
-        // Deliberately generous. Free-tier hosts (Render's free web
-        // services included) spin down when idle and can take 50+
-        // seconds just to wake up on the next request, BEFORE any
-        // actual model inference time is added on top — a 60s timeout
-        // here was cutting that too close and caused real, reproducible
-        // "could not reach the X-ray AI model service" failures on a
-        // cold instance. 170s gives real headroom above a ~50-60s cold
-        // start plus a few seconds of CPU inference, while still being
-        // comfortably under typical platform-level request limits
-        // (~180s+ on most hosts). If you're on a paid/always-on tier
-        // for the model service, this basically never gets used, so
-        // there's no real downside to it being generous.
-        signal: AbortSignal.timeout(170000),
-      });
-      if (!upstream.ok) {
-        const text = await upstream.text().catch(() => '');
-        console.error('X-ray model service error:', upstream.status, text);
-        return res.status(502).json({
-          error: 'xray_service_error',
-          message: 'The X-ray model service could not analyze this image. Please try again.',
+      const baseUrl = serviceUrl.replace(/\/$/, '');
+      // Wake an idle free-tier instance with a cheap request first, so
+      // the (large) image upload isn't wasted on a cold start. Failures
+      // are ignored - the real request below retries on its own.
+      const startedAt = Date.now();
+      await fetch(`${baseUrl}/health`, { signal: AbortSignal.timeout(60000) }).catch(() => {});
+
+      // 170s overall (see postToModelService): free-tier hosts can take
+      // 50+ seconds just to wake up, before any model inference time.
+      const result = await postToModelService(baseUrl, form, 170000 - (Date.now() - startedAt));
+      if (!result.ok) {
+        // 429/502/503/504 even after retrying = the service is busy or
+        // still waking up; anything else = it rejected this image.
+        const busy = RETRYABLE_STATUSES.has(result.status);
+        return res.status(busy ? 503 : 502).json({
+          error: busy ? 'xray_service_busy' : 'xray_service_error',
+          message: busy
+            ? 'The X-ray AI service is busy or waking up (free hosting spins down when idle). ' +
+              'Please wait about a minute and try again.'
+            : 'The X-ray model service could not analyze this image. Please try again.',
         });
       }
-      modelResponse = await upstream.json();
+      modelResponse = await result.response.json();
     } catch (fetchErr) {
       console.error('Could not reach X-ray model service:', fetchErr);
       const isTimeout = fetchErr?.name === 'TimeoutError' || fetchErr?.name === 'AbortError';
