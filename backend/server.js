@@ -197,15 +197,45 @@ missing or ambiguous, do NOT guess — ask a clarifying question in your
 reply instead, and leave action null. Never propose an action the
 patient didn't ask for.
 
+WHEN YOU ARE NOT SURE: if you are not confident in an answer — the
+question is medical and needs a professional's judgement, the answer is
+not in the data you were given, it depends on details you don't have,
+or it is outside what a medicine-reminder assistant can safely answer —
+do NOT guess and do NOT make something up. Say honestly that you are not
+sure, and tell the patient to consult their doctor or physician (or
+pharmacist for medicine questions). Also set "uncertain" to true in your
+JSON. Set "uncertain" to false when you are confident (e.g. reading back
+their own medicines, appointments or report summaries).
+
+FINDING DOCUMENTS: the patient's saved reports and prescriptions live on
+their phone. If they ask you to find, show, open, search for, view or
+download one of their reports or prescriptions (e.g. "find my cholesterol
+report", "show my last prescription", "meri blood test ki report dikhao"),
+return a "find_documents" action. The app searches the phone and shows
+the patient View and Download buttons — you do NOT need the document's
+contents, and you must NOT say you can't access their files. Fields:
+- "kind": "report" (lab reports, scans, doctor's notes), "prescription",
+  or "any" if it's unclear which.
+- "query": 1-4 distinguishing keywords in ENGLISH, as they would appear
+  printed on the document (a test name like "cholesterol", a doctor's
+  name, a hospital). Leave it "" if they just want the latest one. Do NOT
+  include generic words like "report", "prescription", "my" or "find".
+Your "reply" should be one short sentence like "Sure, let me look for
+your cholesterol report." Do not claim what was or wasn't found — the app
+shows the results. Questions ABOUT what a report says (rather than
+asking to find/open the file) are answered normally from the summaries.
+
 Respond with ONLY valid JSON (no prose, no markdown fences) in exactly
 this shape:
 {
   "reply": "your conversational reply as plain text",
+  "uncertain": false,
   "action": null
 }
 or, when proposing an action:
 {
   "reply": "your conversational reply, e.g. confirming what you're about to add",
+  "uncertain": false,
   "action": {
     "type": "add_medicine",
     "name": "", "dosage": "", "instructions": "",
@@ -216,10 +246,17 @@ or, when proposing an action:
 or:
 {
   "reply": "...",
+  "uncertain": false,
   "action": {
     "type": "add_appointment",
     "doctorName": "", "location": "", "dateTime": "YYYY-MM-DDTHH:MM:00"
   }
+}
+or, to find a saved document:
+{
+  "reply": "Sure, let me look for your cholesterol report.",
+  "uncertain": false,
+  "action": { "type": "find_documents", "kind": "report", "query": "cholesterol" }
 }`;
 
 app.post('/api/chat', async (req, res) => {
@@ -299,7 +336,11 @@ app.post('/api/chat', async (req, res) => {
       parsed = { reply: rawText, action: null };
     }
 
-    res.json({ reply: parsed.reply ?? rawText, action: parsed.action ?? null });
+    res.json({
+      reply: parsed.reply ?? rawText,
+      action: parsed.action ?? null,
+      uncertain: parsed.uncertain === true,
+    });
   } catch (err) {
     console.error('Chat request failed:', err);
     if (isOverloadedError(err)) {
@@ -334,7 +375,15 @@ app.post('/api/chat', async (req, res) => {
 const REPORT_SUMMARY_PROMPT = `You read a medical report or lab result for
 a patient (not a doctor) and return ONLY valid JSON, no prose, no markdown
 fences, in this exact shape:
-{"summary":"","values":[{"test":"","value":0,"unit":"","low":null,"high":null}]}
+{"summary":"","reportDate":null,"values":[{"test":"","value":0,"unit":"","low":null,"high":null}]}
+
+For "reportDate" (a string or null):
+- The date the test was done / sample collected / report issued, as it is
+  printed ON the report, formatted strictly as YYYY-MM-DD. Prefer the
+  sample-collection date, then the report date. Indian reports usually
+  write dates as DD/MM/YYYY (day first) — convert carefully.
+- If no date is clearly printed on the report, use null. NEVER guess or
+  use today's date.
 
 For "summary" (a single string):
 - Use plain, everyday language, no unexplained jargon.
@@ -383,6 +432,7 @@ app.post('/api/summarize-report', async (req, res) => {
     const parsed = JSON.parse(response.text);
     res.json({
       summary: parsed.summary || '',
+      reportDate: typeof parsed.reportDate === 'string' ? parsed.reportDate : null,
       values: Array.isArray(parsed.values) ? parsed.values : [],
     });
   } catch (err) {

@@ -9,7 +9,7 @@ import '../models/interaction_check.dart';
 /// chatbot_screen.dart. Same "AI suggests, human confirms" pattern used
 /// for prescription scanning.
 class ChatAction {
-  final String type; // 'add_medicine' | 'add_appointment'
+  final String type; // 'add_medicine' | 'add_appointment' | 'find_documents'
   final Map<String, dynamic> data;
 
   ChatAction({required this.type, required this.data});
@@ -22,7 +22,12 @@ class ChatAction {
 class ChatResponse {
   final String reply;
   final ChatAction? action;
-  ChatResponse({required this.reply, this.action});
+
+  /// True when the assistant said it wasn't sure of its answer. The chat
+  /// screen uses this to guarantee the patient is told to consult their
+  /// doctor/physician, even if the model's wording didn't say so.
+  final bool uncertain;
+  ChatResponse({required this.reply, this.action, this.uncertain = false});
 }
 
 /// This talks to YOUR OWN backend server — never directly to an LLM
@@ -42,7 +47,7 @@ class AiBackendService {
   // Replace with your deployed backend URL. Shared by auth_service.dart
   // and cloud_sync_service.dart too, so there's only one place to update
   // after deploying.
-  static const String baseUrl = 'https://my-sathi3.onrender.com';
+  static const String baseUrl = 'https://YOUR-BACKEND-URL.example.com';
   static const String _baseUrl = baseUrl;
 
   /// Backend error responses may include a friendlier `message` (e.g. for
@@ -122,6 +127,7 @@ class AiBackendService {
     final data = jsonDecode(res.body) as Map<String, dynamic>;
     return ChatResponse(
       reply: data['reply'] as String,
+      uncertain: data['uncertain'] == true,
       action: data['action'] != null
           ? ChatAction.fromJson(data['action'] as Map<String, dynamic>)
           : null,
@@ -154,9 +160,20 @@ class AiBackendService {
 
     final data = jsonDecode(res.body) as Map<String, dynamic>;
     final valuesList = (data['values'] as List?) ?? [];
+    // Date printed on the report itself (null if the AI couldn't find
+    // one). Ignored if unparseable or in the future.
+    DateTime? reportDate;
+    final rawDate = data['reportDate'];
+    if (rawDate is String) {
+      reportDate = DateTime.tryParse(rawDate.trim());
+      if (reportDate != null && reportDate.isAfter(DateTime.now())) {
+        reportDate = null;
+      }
+    }
     return ReportAnalysis(
       summary: data['summary'] as String? ?? '',
       values: valuesList.cast<Map<String, dynamic>>(),
+      reportDate: reportDate,
     );
   }
 
@@ -288,7 +305,11 @@ class EmergencyCardResult {
 class ReportAnalysis {
   final String summary;
   final List<Map<String, dynamic>> values;
-  ReportAnalysis({required this.summary, required this.values});
+
+  /// Date printed on the report (not upload time); null if not found.
+  final DateTime? reportDate;
+  ReportAnalysis(
+      {required this.summary, required this.values, this.reportDate});
 }
 
 /// Result of "Sathi AI Scan Insight" (see analyzeScan above). Intentionally

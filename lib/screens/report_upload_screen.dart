@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
@@ -31,6 +32,10 @@ class _ReportUploadScreenState extends State<ReportUploadScreen> {
   String _rawText = '';
   String? _summary;
   List<LabTestValue> _labValues = [];
+  // Date the report was actually done (read from the report, or picked by
+  // the user) — NOT the upload time. Lab trend charts use this.
+  DateTime _reportDate = DateTime.now();
+  bool _reportDateFromAi = false;
   bool _loading = false;
   String? _error;
 
@@ -45,12 +50,16 @@ class _ReportUploadScreenState extends State<ReportUploadScreen> {
       _error = null;
       _summary = null;
       _labValues = [];
+      _reportDate = DateTime.now();
+      _reportDateFromAi = false;
     });
 
     try {
       final raw = await _ocr.extractRawText(picked.path);
       String? summary;
       List<LabTestValue> labValues = [];
+      DateTime reportDate = DateTime.now();
+      bool fromAi = false;
       try {
         // One backend call returns both the summary and any structured
         // lab values — see AiBackendService.analyzeReport. Previously
@@ -59,11 +68,14 @@ class _ReportUploadScreenState extends State<ReportUploadScreen> {
         // for no real benefit.
         final analysis = await AiBackendService.instance.analyzeReport(raw);
         summary = analysis.summary;
-        final now = DateTime.now();
+        if (analysis.reportDate != null) {
+          reportDate = analysis.reportDate!;
+          fromAi = true;
+        }
         labValues = analysis.values
             .where((j) => j['test'] != null && j['value'] != null)
             .map((j) => LabTestValue.fromAiJson(j,
-                id: const Uuid().v4(), reportId: _reportId, date: now))
+                id: const Uuid().v4(), reportId: _reportId, date: reportDate))
             .where((v) => v.testName.isNotEmpty)
             .toList();
       } catch (_) {
@@ -73,6 +85,8 @@ class _ReportUploadScreenState extends State<ReportUploadScreen> {
         _rawText = raw;
         _summary = summary;
         _labValues = labValues;
+        _reportDate = reportDate;
+        _reportDateFromAi = fromAi;
         if (summary == null) {
           _error = AppText.t('summary_unavailable', lang);
         }
@@ -81,6 +95,21 @@ class _ReportUploadScreenState extends State<ReportUploadScreen> {
       setState(() => _error = AppText.t('could_not_read_photo_text', lang));
     } finally {
       setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _pickReportDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _reportDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now(),
+    );
+    if (picked != null) {
+      setState(() {
+        _reportDate = picked;
+        _reportDateFromAi = false;
+      });
     }
   }
 
@@ -110,7 +139,20 @@ class _ReportUploadScreenState extends State<ReportUploadScreen> {
     );
     await DatabaseService.instance.insertMedicalReport(report);
     if (_labValues.isNotEmpty) {
-      await DatabaseService.instance.insertLabValues(_labValues);
+      // Stamp with the (possibly user-corrected) report date.
+      final dated = _labValues
+          .map((v) => LabTestValue(
+                id: v.id,
+                reportId: v.reportId,
+                testName: v.testName,
+                value: v.value,
+                unit: v.unit,
+                refLow: v.refLow,
+                refHigh: v.refHigh,
+                date: _reportDate,
+              ))
+          .toList();
+      await DatabaseService.instance.insertLabValues(dated);
     }
     if (mounted) Navigator.pop(context);
   }
@@ -189,6 +231,18 @@ class _ReportUploadScreenState extends State<ReportUploadScreen> {
             ],
             if (_labValues.isNotEmpty) ...[
               const SizedBox(height: 16),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.event),
+                title: Text(AppText.t('report_date', lang)),
+                subtitle: Text(_reportDateFromAi
+                    ? AppText.t('report_date_detected', lang)
+                    : AppText.t('report_date_check', lang)),
+                trailing: TextButton(
+                  onPressed: _pickReportDate,
+                  child: Text(DateFormat('d MMM yyyy').format(_reportDate)),
+                ),
+              ),
               Text(AppText.t('lab_values_detected', lang)
                   .replaceFirst('{count}', '${_labValues.length}'),
                   style: const TextStyle(fontWeight: FontWeight.bold)),

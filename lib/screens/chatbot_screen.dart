@@ -1,9 +1,16 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:uuid/uuid.dart';
 import '../models/medicine.dart';
 import '../models/appointment.dart';
+import '../models/medical_report.dart';
+import '../models/prescription.dart';
+import '../widgets/fullscreen_image_viewer.dart';
+import 'report_detail_screen.dart';
+import 'prescription_detail_screen.dart';
 import '../services/ai_backend_service.dart';
 import '../services/database_service.dart';
 import '../services/auth_service.dart';
@@ -17,7 +24,31 @@ class _ChatMessage {
   final ChatAction? action;
   bool actionHandled = false;
 
-  _ChatMessage(this.text, this.fromUser, {this.action});
+  /// Set (possibly empty) when the assistant was asked to find a saved
+  /// report/prescription; null for ordinary messages.
+  final List<_FoundDoc>? docs;
+
+  _ChatMessage(this.text, this.fromUser, {this.action, this.docs});
+}
+
+/// One saved report or prescription matched by a "find my ..." request.
+class _FoundDoc {
+  final String title;
+  final String subtitle;
+  final String? filePath; // the scanned photo, if it still exists
+  final MedicalReport? report;
+  final Prescription? prescription;
+
+  _FoundDoc({
+    required this.title,
+    required this.subtitle,
+    required this.filePath,
+    this.report,
+    this.prescription,
+  });
+
+  bool get isPrescription => prescription != null;
+  bool get hasFile => filePath != null && File(filePath!).existsSync();
 }
 
 class ChatbotScreen extends StatefulWidget {
@@ -174,10 +205,30 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
       // includes them anyway (e.g. **bold**, `code`, bullet dashes) so it
       // never renders as literal asterisks/backticks in the plain-text
       // chat bubble.
-      final cleanReply = _stripMarkdown(response.reply);
+      var cleanReply = _stripMarkdown(response.reply);
 
-      setState(() => _messages
-          .add(_ChatMessage(cleanReply, false, action: response.action)));
+      // "Not sure" safety net: if the assistant flagged that it wasn't
+      // confident, make sure the patient is told to see a doctor even
+      // when the model's own wording forgot to say so.
+      if (response.uncertain && !_mentionsProfessional(cleanReply)) {
+        cleanReply = '$cleanReply\n\n${AppText.t('consult_doctor_note', languageCode)}';
+      }
+
+      // "Find my ... report/prescription": searched on this phone (no
+      // extra AI call), results shown with View / Download buttons.
+      // Not a confirm-card action, so it isn't attached as one.
+      List<_FoundDoc>? docs;
+      var action = response.action;
+      if (action != null && action.type == 'find_documents') {
+        docs = await _findDocuments(
+          (action.data['kind'] as String?) ?? 'any',
+          (action.data['query'] as String?) ?? '',
+        );
+        action = null;
+      }
+
+      setState(() => _messages.add(
+          _ChatMessage(cleanReply, false, action: action, docs: docs)));
     } catch (e) {
       final detail = e.toString().replaceFirst('Exception: ', '');
       final isKnownMessage = detail.isNotEmpty && !detail.contains('SocketException') &&
@@ -198,6 +249,97 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
           curve: Curves.easeOut,
         );
       }
+    }
+  }
+
+  static final _professionalWords = RegExp(
+      r'doctor|physician|pharmacist|डॉक्टर|चिकित्सक|फार्मासिस्ट|दवा विक्रेता',
+      caseSensitive: false);
+
+  bool _mentionsProfessional(String text) => _professionalWords.hasMatch(text);
+
+  static const _stopWords = {
+    'report', 'reports', 'prescription', 'prescriptions', 'my', 'the',
+    'of', 'for', 'and', 'a', 'an',
+  };
+
+  /// Searches the saved reports/prescriptions on this device. [query] is
+  /// a few English keywords from the assistant (a test name, doctor name,
+  /// etc.); with no keywords it just returns the newest ones. Best matches
+  /// first, then newest. At most 5.
+  Future<List<_FoundDoc>> _findDocuments(String kind, String query) async {
+    final terms = query
+        .toLowerCase()
+        .split(RegExp(r'[^a-z0-9\u0900-\u097F]+'))
+        .where((t) => t.length >= 2 && !_stopWords.contains(t))
+        .toList();
+    final fmt = DateFormat('d MMM yyyy');
+    final scored = <MapEntry<_FoundDoc, ({int score, DateTime date})>>[];
+
+    int score(String title, String body) {
+      if (terms.isEmpty) return 0;
+      final t = title.toLowerCase();
+      final b = body.toLowerCase();
+      var s = 0;
+      for (final term in terms) {
+        if (t.contains(term)) s += 3;
+        if (b.contains(term)) s += 1;
+      }
+      return s;
+    }
+
+    if (kind != 'prescription') {
+      for (final r in await DatabaseService.instance.getMedicalReports()) {
+        final sc = score(r.title, '${r.summary} ${r.rawText}');
+        if (terms.isNotEmpty && sc == 0) continue;
+        scored.add(MapEntry(
+          _FoundDoc(
+            title: r.title,
+            subtitle: '${AppText.t('doc_type_report', _lang)} • ${fmt.format(r.uploadedDate)}',
+            filePath: r.filePath,
+            report: r,
+          ),
+          (score: sc, date: r.uploadedDate),
+        ));
+      }
+    }
+    if (kind != 'report') {
+      for (final p in await DatabaseService.instance.getPrescriptions()) {
+        final title = p.doctorName.isNotEmpty
+            ? '${AppText.t('doc_type_prescription', _lang)} — Dr. ${p.doctorName}'
+            : AppText.t('doc_type_prescription', _lang);
+        final sc = score(title, '${p.notes} ${p.rawText}');
+        if (terms.isNotEmpty && sc == 0) continue;
+        scored.add(MapEntry(
+          _FoundDoc(
+            title: title,
+            subtitle: '${AppText.t('doc_type_prescription', _lang)} • ${fmt.format(p.dateAdded)}',
+            filePath: p.imagePath,
+            prescription: p,
+          ),
+          (score: sc, date: p.dateAdded),
+        ));
+      }
+    }
+
+    scored.sort((a, b) {
+      final byScore = b.value.score.compareTo(a.value.score);
+      return byScore != 0 ? byScore : b.value.date.compareTo(a.value.date);
+    });
+    return scored.take(5).map((e) => e.key).toList();
+  }
+
+  void _viewDoc(_FoundDoc d) {
+    if (d.hasFile) {
+      FullscreenImageViewer.open(context, File(d.filePath!), title: d.title);
+    } else if (d.report != null) {
+      Navigator.push(context,
+          MaterialPageRoute(builder: (_) => ReportDetailScreen(report: d.report!)));
+    } else if (d.prescription != null) {
+      Navigator.push(
+          context,
+          MaterialPageRoute(
+              builder: (_) => PrescriptionDetailScreen(prescription: d.prescription!)));
     }
   }
 
@@ -340,11 +482,16 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                   ),
                 );
 
-                if (m.action == null || m.actionHandled) return bubble;
+                final showAction = m.action != null && !m.actionHandled;
+                if (!showAction && m.docs == null) return bubble;
 
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [bubble, _actionCard(context, m)],
+                  children: [
+                    bubble,
+                    if (showAction) _actionCard(context, m),
+                    if (m.docs != null) _docsCard(context, m.docs!),
+                  ],
                 );
               },
             ),
@@ -408,6 +555,82 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  /// Results of a "find my report/prescription" request: one row per
+  /// match with exactly two options — View and Download.
+  Widget _docsCard(BuildContext context, List<_FoundDoc> docs) {
+    final lang = context.read<SettingsService>().languageCode;
+    final theme = Theme.of(context);
+
+    if (docs.isEmpty) {
+      return Container(
+        margin: const EdgeInsets.only(left: 4, bottom: 10, right: 60),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          border: Border.all(color: theme.dividerColor),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Text(AppText.t('no_docs_found', lang)),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final d in docs)
+          Container(
+            margin: const EdgeInsets.only(left: 4, bottom: 10, right: 40),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              border: Border.all(color: theme.colorScheme.primary),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(d.isPrescription ? Icons.receipt_long : Icons.description,
+                        color: theme.colorScheme.primary, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(d.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(d.subtitle, style: theme.textTheme.bodySmall),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () => _viewDoc(d),
+                        icon: const Icon(Icons.visibility_outlined, size: 18),
+                        label: Text(AppText.t('doc_view', lang)),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: d.hasFile
+                            ? () => saveImageToGallery(context, d.filePath!, lang)
+                            : null,
+                        icon: const Icon(Icons.download_outlined, size: 18),
+                        label: Text(AppText.t('doc_download', lang)),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+      ],
     );
   }
 
